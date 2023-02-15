@@ -1,0 +1,30 @@
+[package]
+name = "crypto_provider_rustcrypto"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+crypto_provider.workspace = true
+hmac.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+x25519-dalek.workspace = true
+p256 = { workspace = true, features = ["ecdh"], default-features = false }
+sec1.workspace = true
+ed25519-dalek = {workspace = true}
+rand = { workspace = true, features = ["std", "std_rng"] }
+rand_core_05_adapter.workspace = true
+subtle.workspace = true
+aes.workspace = true
+ctr.workspace = true
+cbc.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+crypto_provider = { workspace = true, features = ["testing"] }
+rand = { workspace = true, features = ["std", "std_rng"] }
+
+[features]
+default = ["alloc"]
+alloc = []

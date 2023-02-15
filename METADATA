@@ -1,0 +1,17 @@
+name: "beto-rust"
+description:
+"Core rust components to google better together experiences."
+
+third_party {
+  url {
+    type: HOMEPAGE
+    value: "https://team.googlesource.com/beto-rust-devs/beto-core-staging"
+  }
+  url {
+    type: GIT
+    value: "https://team.googlesource.com/beto-rust-devs/beto-core-staging"
+  }
+  version: "d19e9170169453bc9df0a54b5fd15fdaceb038f3"
+  last_upgrade_date { year: 2023 month: 2 day: 15 }
+  license_type: NOTICE
+}
