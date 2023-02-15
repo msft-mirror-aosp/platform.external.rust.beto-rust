@@ -1,0 +1,40 @@
+[package]
+name = "ldt_np_adv_ffi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+crypto_provider = { path = "../../crypto/crypto_provider" }
+crypto_provider_openssl = {path = "../../crypto/crypto_provider_openssl", optional = true}
+crypto_provider_rustcrypto = {path = "../../crypto/crypto_provider_rustcrypto", optional = true}
+ldt = { path = "../ldt" }
+ldt_np_adv = { path = "../ldt_np_adv" }
+
+zerocopy = "0.6.1"
+libc_alloc = {version = "1.0.4", optional = true }
+panic-abort = { version = "0.3.2", optional = true }
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+spin = "0.9.4"
+rand_chacha = { version = "0.3.1", default-features = false }
+getrandom = "0.2.8"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[features]
+default = ["rustcrypto", "std"]
+std = []
+# default to rustcrypto primitives, but use this feature to flip to openssl
+# based implementations, openssl required std library
+openssl = ["std", "dep:crypto_provider_openssl"]
+rustcrypto = ["dep:crypto_provider_rustcrypto"]
+
+[profile.release-min-size]
+inherits = "release"
+panic = "abort"
+codegen-units = 1
+lto = true
+# z optimizes for size
+opt-level = "z"
+strip = true
