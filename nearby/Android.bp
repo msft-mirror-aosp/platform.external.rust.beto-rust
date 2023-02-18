@@ -1,0 +1,175 @@
+rust_library {
+    name: "libcrypto_provider",
+    host_supported: true,
+    crate_name: "crypto_provider",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["crypto/crypto_provider/src/lib.rs"],
+    edition: "2021",
+    features: [
+        "alloc",
+        "default",
+    ],
+    rustlibs: [
+        "libhex",
+        "librand",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library {
+    name: "libcrypto_provider_openssl",
+    host_supported: true,
+    crate_name: "crypto_provider_openssl",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    cfgs: ["soong"],
+    srcs: ["crypto/crypto_provider_openssl/src/lib.rs"],
+    edition: "2021",
+    features: ["boringssl"],
+    rustlibs: [
+        "libcfg_if",
+        "libcrypto_provider",
+        "libopenssl",
+        "libouroboros",
+        "librand",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_ffi_shared {
+    name: "libukey2_c_ffi_shared",
+    stem: "libukey2_c_ffi",
+    host_supported: true,
+    crate_name: "ukey2_c_ffi",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["connections/ukey2/ukey2_c_ffi/src/lib.rs"],
+    edition: "2021",
+    features: ["openssl"],
+    rustlibs: [
+        "libcfg_if",
+        "libcrypto_provider_openssl",
+        "liblazy_static",
+        "librand",
+        "librand_chacha",
+        "libspin_nostd",
+        "libukey2_connections",
+        "libukey2_rs",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library {
+    name: "libukey2_connections",
+    host_supported: true,
+    crate_name: "ukey2_connections",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["connections/ukey2/ukey2_connections/src/lib.rs"],
+    edition: "2021",
+    rustlibs: [
+        "libbytes",
+        "libcrypto_provider",
+        "librand",
+        "libukey2_proto",
+        "libukey2_rs",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_ffi_shared {
+    name: "libukey2_jni_shared",
+    stem: "libukey2_jni",
+    host_supported: true,
+    crate_name: "ukey2_jni",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["connections/ukey2/ukey2_jni/src/lib.rs"],
+    edition: "2021",
+    features: ["openssl"],
+    rustlibs: [
+        "libcfg_if",
+        "libcrypto_provider_openssl",
+        "libjni",
+        "liblazy_static",
+        "librand",
+        "librand_chacha",
+        "libspin_nostd",
+        "libukey2_connections",
+        "libukey2_rs",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library {
+    name: "libukey2_proto",
+    host_supported: true,
+    crate_name: "ukey2_proto",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["connections/ukey2/ukey2_proto/src/lib.rs"],
+    edition: "2021",
+    features: [
+        "default",
+    ],
+    rustlibs: [
+        "libprotobuf",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library {
+    name: "libukey2_rs",
+    host_supported: true,
+    crate_name: "ukey2_rs",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["connections/ukey2/ukey2/src/lib.rs"],
+    edition: "2021",
+    rustlibs: [
+        "libcrypto_provider",
+        "libnum_bigint",
+        "librand",
+        "libukey2_proto",
+    ],
+    proc_macros: ["libderive_getters"],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+java_library_static {
+    name: "ukey2_jni",
+    srcs: [
+        "connections/ukey2/ukey2_jni/java/src/main/**/*.java",
+        "connections/ukey2/ukey2_jni/java/src/main/**/*.kt",
+    ],
+    host_supported: true,
+    static_libs: [
+        "jsr305",
+    ],
+    required: [
+        "libukey2_jni_shared",
+    ],
+}
+
