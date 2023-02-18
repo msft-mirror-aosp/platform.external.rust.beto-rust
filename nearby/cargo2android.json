@@ -1,0 +1,7 @@
+{
+    "device": true,
+    "run": true,
+    "features": "openssl,boringssl",
+    "onefile": true,
+    "patch": "patches/Android.bp.patch"
+}
