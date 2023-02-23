@@ -111,6 +111,7 @@ rust_ffi_shared {
         "libukey2_connections",
         "libukey2_rs",
     ],
+    compile_multilib: "first",
     apex_available: [
         "//apex_available:platform",
         "//apex_available:anyapex",
