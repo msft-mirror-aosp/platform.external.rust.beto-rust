@@ -34,7 +34,6 @@ rust_library {
         "libcfg_if",
         "libcrypto_provider",
         "libopenssl",
-        "libouroboros",
         "librand",
     ],
     apex_available: [
