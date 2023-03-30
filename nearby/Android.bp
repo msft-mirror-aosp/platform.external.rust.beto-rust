@@ -110,12 +110,7 @@ rust_ffi_shared {
     srcs: ["connections/ukey2/ukey2_jni/src/lib.rs"],
     edition: "2021",
     features: ["openssl"],
-    // Using rlibs instead of rustlibs here to minimize the size impact on the system image. Since
-    // most of the transitive dependencies are included only by this project for U, building this
-    // as a single dylib will be more space-efficient. As more Rust project gets added, this may
-    // change and it may be better for different projects to share the same dylib, especially for
-    // common projects like libjni and libprotobuf.
-    rlibs: [
+    rustlibs: [
         "libcfg_if",
         "libcrypto_provider_openssl",
         "libjni",
