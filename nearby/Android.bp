@@ -140,7 +140,7 @@ rust_library {
         "default",
     ],
     rustlibs: [
-        "libprotobuf",
+        "libprotobuf_deprecated",
     ],
     apex_available: [
         "//apex_available:platform",

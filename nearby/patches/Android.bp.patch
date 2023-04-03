@@ -1,0 +1,13 @@
+diff --git a/nearby/Android.bp b/nearby/Android.bp
+index 844b516..f4bb9e5 100644
+--- a/nearby/Android.bp
++++ b/nearby/Android.bp
+@@ -140,7 +140,7 @@ rust_library {
+         "default",
+     ],
+     rustlibs: [
+-        "libprotobuf",
++        "libprotobuf_deprecated",
+     ],
+     apex_available: [
+         "//apex_available:platform",
