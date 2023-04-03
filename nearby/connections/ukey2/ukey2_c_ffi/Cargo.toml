@@ -12,9 +12,10 @@ crypto_provider_openssl = { workspace = true, optional = true }
 crypto_provider_rustcrypto = { workspace = true, optional = true, features = ["alloc"] }
 
 lazy_static.workspace = true
+log.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
-spin = "0.9.4"
+spin.workspace = true
 
 [features]
 default = ["rustcrypto"]

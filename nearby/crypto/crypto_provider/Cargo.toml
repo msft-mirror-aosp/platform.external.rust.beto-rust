@@ -6,12 +6,13 @@ publish.workspace = true
 
 [dependencies]
 hex-literal = { workspace = true, optional = true }
-rand.workspace = true
+rand = { workspace = true, optional = true }
 rstest = { version = "0.16.0", optional = true }
 rstest_reuse = { version = "0.5.0", optional = true }
 wycheproof = { version = "0.4.0", optional = true }
 hex = { workspace = true, optional = true }
-test_helper = {workspace = true, optional = true}
+test_helper = { workspace = true, optional = true }
+bytes = { version = "1.4.0", default-features = false }
 
 [dev-dependencies]
 crypto_provider_openssl.workspace = true
@@ -24,14 +25,18 @@ rand_ext.workspace = true
 hex.workspace = true
 
 [features]
-default = ["alloc"]
+default = ["alloc", "gcm_siv"]
+std = []
 alloc = []
+gcm_siv = []
 testing = [
     "dep:hex-literal",
     "dep:rstest",
     "dep:rstest_reuse",
     "dep:wycheproof",
     "dep:test_helper",
+    "std",
+    "rand",
     "rand/std",
     "rand/std_rng",
     "dep:hex",

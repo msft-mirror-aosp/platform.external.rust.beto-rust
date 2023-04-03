@@ -1,4 +1,3 @@
-#![allow(missing_docs)]
 // Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,14 +14,12 @@
 
 use crate::proto_adapter::{IntoAdapter, MessageType, ToWrappedMessage as _};
 use crate::ukey2_handshake::ClientFinishedError;
-use crate::{
-    ukey2_handshake::{
-        ClientInit, ClientInitError, Ukey2Client, Ukey2ClientStage1, Ukey2Server,
-        Ukey2ServerStage1, Ukey2ServerStage2,
-    },
-    ErrorHandler, Severity,
+use crate::ukey2_handshake::{
+    ClientInit, ClientInitError, Ukey2Client, Ukey2ClientStage1, Ukey2Server, Ukey2ServerStage1,
+    Ukey2ServerStage2,
 };
 use crypto_provider::CryptoProvider;
+use log::error;
 use std::fmt::Debug;
 use ukey2_proto::protobuf::{Message, ProtobufEnum};
 use ukey2_proto::ukey2_all_proto::ukey;
@@ -39,6 +36,7 @@ impl SendAlert {
         Self { alert_type, msg }
     }
 
+    /// Convert this `SendAlert` into serialized bytes of the `Ukey2Alert` protobuf message.
     pub fn into_wrapped_alert_msg(self) -> Vec<u8> {
         let mut alert_message = ukey::Ukey2Alert::default();
         alert_message.set_field_type(self.alert_type);
@@ -49,6 +47,36 @@ impl SendAlert {
     }
 }
 
+/// Generic trait for implementation of a state machine. Each state in this machine has two possible
+/// transitions – Success and Failure.
+///
+/// On Success, the machine will transition to the next state, represented by the associated type
+/// `Success`.
+///
+/// On Failure, a [`SendAlert`] message is returned indicating the failure, and there no further
+/// transitions will be possible on this state machine.
+///
+/// ### State transitions
+///
+/// Here are the states both parties of the handshake goes through, with the Failure transitions
+/// omitted to keep the documentation simple.
+///
+/// ```text
+///          Ukey2ClientStage1               Ukey2ServerStage1
+///                 |
+///                 | -------[msg: ClientInit]-----> |
+///                                                  |
+///                                           Ukey2ServerStage2
+///                                                  |
+///                 | <------[msg: ServerInit]------ |
+///                 |
+///              Ukey2Client
+///                 |
+///                 | -----[msg: ClientFinished]---> |
+///                                                  |
+///                                              Ukey2Server
+/// ```
+///
 pub trait StateMachine {
     /// The type produced by each successful state transition
     type Success;
@@ -61,7 +89,7 @@ pub trait StateMachine {
     ) -> Result<Self::Success, SendAlert>;
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ClientStage1<C, E> {
+impl<C: CryptoProvider> StateMachine for Ukey2ClientStage1<C> {
     type Success = Ukey2Client;
 
     fn advance_state<R: rand::Rng + rand::CryptoRng>(
@@ -69,8 +97,7 @@ impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ClientStage1<C, E
         _rng: &mut R,
         message_bytes: &[u8],
     ) -> Result<Self::Success, SendAlert> {
-        let (message_data, message_type) =
-            decode_wrapper_msg_and_type(message_bytes, &self.error_logger)?;
+        let (message_data, message_type) = decode_wrapper_msg_and_type(message_bytes)?;
 
         match message_type {
             // Client should not be receiving ClientInit/ClientFinish
@@ -79,10 +106,7 @@ impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ClientStage1<C, E
                 Some("wrong message".to_string()),
             )),
             MessageType::ServerInit => {
-                let message = decode_msg_contents::<_, ukey::Ukey2ServerInit, _>(
-                    message_data,
-                    &self.error_logger,
-                )?;
+                let message = decode_msg_contents::<_, ukey::Ukey2ServerInit>(message_data)?;
                 self.handle_server_init(message, message_bytes.to_vec())
                     .map_err(|_| {
                         SendAlert::from(
@@ -95,22 +119,19 @@ impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ClientStage1<C, E
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ServerStage1<C, E> {
-    type Success = Ukey2ServerStage2<C, E>;
+impl<C: CryptoProvider> StateMachine for Ukey2ServerStage1<C> {
+    type Success = Ukey2ServerStage2<C>;
 
     fn advance_state<R: rand::Rng + rand::CryptoRng>(
         self,
         rng: &mut R,
         message_bytes: &[u8],
     ) -> Result<Self::Success, SendAlert> {
-        let (message_data, message_type) =
-            decode_wrapper_msg_and_type(message_bytes, &self.error_logger)?;
+        let (message_data, message_type) = decode_wrapper_msg_and_type(message_bytes)?;
         match message_type {
             MessageType::ClientInit => {
-                let message: ClientInit = decode_msg_contents::<_, ukey::Ukey2ClientInit, _>(
-                    message_data,
-                    &self.error_logger,
-                )?;
+                let message: ClientInit =
+                    decode_msg_contents::<_, ukey::Ukey2ClientInit>(message_data)?;
                 self.handle_client_init(rng, message, message_bytes.to_vec())
                     .map_err(|e| {
                         SendAlert::from(
@@ -137,7 +158,7 @@ impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ServerStage1<C, E
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ServerStage2<C, E> {
+impl<C: CryptoProvider> StateMachine for Ukey2ServerStage2<C> {
     type Success = Ukey2Server;
 
     fn advance_state<R: rand::Rng + rand::CryptoRng>(
@@ -145,14 +166,10 @@ impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ServerStage2<C, E
         _rng: &mut R,
         message_bytes: &[u8],
     ) -> Result<Self::Success, SendAlert> {
-        let (message_data, message_type) =
-            decode_wrapper_msg_and_type(message_bytes, &self.error_logger)?;
+        let (message_data, message_type) = decode_wrapper_msg_and_type(message_bytes)?;
         match message_type {
             MessageType::ClientFinish => {
-                let message = decode_msg_contents::<_, ukey::Ukey2ClientFinished, _>(
-                    message_data,
-                    &self.error_logger,
-                )?;
+                let message = decode_msg_contents::<_, ukey::Ukey2ClientFinished>(message_data)?;
                 self.handle_client_finished_msg(message, message_bytes)
                     .map_err(|e| match e {
                         ClientFinishedError::BadEd25519Key => SendAlert::from(
@@ -182,17 +199,10 @@ impl<C: CryptoProvider, E: ErrorHandler> StateMachine for Ukey2ServerStage2<C, E
 }
 
 /// Extract the message field and message type from a Ukey2Message
-fn decode_wrapper_msg_and_type<E: ErrorHandler>(
-    bytes: &[u8],
-    logger: &E,
-) -> Result<(Vec<u8>, MessageType), SendAlert> {
+fn decode_wrapper_msg_and_type(bytes: &[u8]) -> Result<(Vec<u8>, MessageType), SendAlert> {
     ukey::Ukey2Message::parse_from_bytes(bytes)
         .map_err(|_| {
-            logger.log_err(
-                Severity::Error,
-                "Unable to unmarshal into Ukey2Message".to_string(),
-            );
-
+            error!("Unable to marshal into Ukey2Message");
             SendAlert::from(
                 ukey::Ukey2Alert_AlertType::BAD_MESSAGE,
                 Some("Bad message data".to_string()),
@@ -217,7 +227,7 @@ fn decode_wrapper_msg_and_type<E: ErrorHandler>(
                 .value()
                 .into_adapter()
                 .map_err(|e| {
-                    logger.log_err(Severity::Error, "Unknown UKEY2 Message Type".to_string());
+                    error!("Unknown UKEY2 Message Type");
                     SendAlert::from(e, Some("bad message type".to_string()))
                 })
                 .map(|message_type| (message_data.to_vec(), message_type))
@@ -227,16 +237,13 @@ fn decode_wrapper_msg_and_type<E: ErrorHandler>(
 /// Extract a specific message type from message data in a Ukey2Messaage
 ///
 /// See [decode_wrapper_msg_and_type] for getting the message data.
-fn decode_msg_contents<A, M: Message + Default + IntoAdapter<A>, E: ErrorHandler>(
+fn decode_msg_contents<A, M: Message + Default + IntoAdapter<A>>(
     message_data: Vec<u8>,
-    logger: &E,
 ) -> Result<A, SendAlert> {
     M::parse_from_bytes(message_data.as_slice())
         .map_err(|_| {
-            logger.log_err(
-                Severity::Error,
+            error!(
                 "Unable to unmarshal message, check frame of the message you were trying to send"
-                    .to_string(),
             );
             SendAlert::from(
                 ukey::Ukey2Alert_AlertType::BAD_MESSAGE_DATA,

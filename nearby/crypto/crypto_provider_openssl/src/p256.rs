@@ -99,8 +99,9 @@ pub struct P256EphemeralSecret(PKey<Private>);
 impl EphemeralSecret<P256> for P256EphemeralSecret {
     type Impl = P256Ecdh;
     type Error = Error;
+    type Rng = ();
 
-    fn generate_random<R: rand::Rng + rand::CryptoRng>(_rng: &mut R) -> Self {
+    fn generate_random(_rng: &mut Self::Rng) -> Self {
         let ecgroup = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
         let eckey = EcKey::generate(&ecgroup).unwrap();
         Self(eckey.try_into().unwrap())

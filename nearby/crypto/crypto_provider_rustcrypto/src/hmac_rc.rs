@@ -112,3 +112,15 @@ impl crypto_provider::hmac::Hmac<64> for Hmac<sha2::Sha512> {
             .map_err(|_| MacError)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::RustCrypto;
+    use core::marker::PhantomData;
+    use crypto_provider::hmac::testing::*;
+
+    #[apply(hmac_test_cases)]
+    fn hmac_tests(testcase: CryptoProviderTestCase<RustCrypto>) {
+        testcase(PhantomData);
+    }
+}

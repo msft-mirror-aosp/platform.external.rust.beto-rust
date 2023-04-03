@@ -17,7 +17,6 @@ pub(crate) use crate::proto_adapter::{
     CipherCommitment, ClientFinished, ClientInit, GenericPublicKey, HandshakeCipher,
     IntoAdapter as _, ServerInit, ToWrappedMessage as _,
 };
-use crate::ErrorHandler;
 use crypto_provider::elliptic_curve::EphemeralSecret;
 use crypto_provider::p256::{P256EcdhProvider, P256PublicKey, P256};
 use crypto_provider::x25519::X25519;
@@ -26,6 +25,7 @@ use crypto_provider::{
     elliptic_curve::{EcdhProvider, PublicKey},
     hkdf::Hkdf,
     sha2::{Sha256, Sha512},
+    CryptoRng,
 };
 use std::{
     collections::hash_set,
@@ -50,8 +50,31 @@ pub trait WireCompatibilityLayer {
 
 #[derive(Clone)]
 pub enum HandshakeImplementation {
+    /// Implementation of ukey2 exchange handshake according to the specs in
+    /// <https://github.com/google/ukey2/blob/master/README.md>.
+    ///
+    /// In particular, when encoding for the P256 public key, this uses the standardized encoding
+    /// described in [SEC 1](https://www.secg.org/sec1-v2.pdf).
+    ///
+    /// For X25519, the public key is the x-coordinate in little endian per RFC 7748.
     Spec,
-    Weird,
+    /// Implementation of ukey2 exchange handshake that matches
+    /// [the Java implementation](https://github.com/google/ukey2/blob/master/src/main/java/com/google/security/cryptauth/lib/securegcm/Ukey2Handshake.java),
+    /// but different from what the specs says.
+    ///
+    /// In particular, when encoding for the P256 curve, the public key is represented as serialized
+    /// bytes of the following proto:
+    /// ```text
+    /// message EcP256PublicKey {
+    ///     // x and y are encoded in big-endian two's complement (slightly wasteful)
+    ///     // Client MUST verify (x,y) is a valid point on NIST P256
+    ///     required bytes x = 1;
+    ///     required bytes y = 2;
+    /// }
+    /// ```
+    ///
+    /// Encoding for X25519 is not supported in this mode.
+    PublicKeyInProtobuf,
 }
 
 impl WireCompatibilityLayer for HandshakeImplementation {
@@ -62,7 +85,7 @@ impl WireCompatibilityLayer for HandshakeImplementation {
     ) -> Option<Vec<u8>> {
         match self {
             HandshakeImplementation::Spec => Some(key),
-            HandshakeImplementation::Weird => match cipher {
+            HandshakeImplementation::PublicKeyInProtobuf => match cipher {
                 HandshakeCipher::P256Sha512 => {
                     let p256_key =
                         <C::P256 as P256EcdhProvider>::PublicKey::from_bytes(key.as_slice())
@@ -96,7 +119,7 @@ impl WireCompatibilityLayer for HandshakeImplementation {
     ) -> Option<Vec<u8>> {
         match self {
             HandshakeImplementation::Spec => Some(key),
-            HandshakeImplementation::Weird => {
+            HandshakeImplementation::PublicKeyInProtobuf => {
                 // key will be wrapped in a genericpublickey
                 let public_key: GenericPublicKey<C> =
                     securemessage::GenericPublicKey::parse_from_bytes(key.as_slice())
@@ -114,29 +137,26 @@ impl WireCompatibilityLayer for HandshakeImplementation {
     }
 }
 
-pub struct Ukey2ServerStage1<C: CryptoProvider, E: ErrorHandler> {
+pub struct Ukey2ServerStage1<C: CryptoProvider> {
     pub(crate) next_protocols: hash_set::HashSet<String>,
     pub(crate) handshake_impl: HandshakeImplementation,
-    pub(crate) error_logger: E,
     _marker: PhantomData<C>,
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> fmt::Debug for Ukey2ServerStage1<C, E> {
+impl<C: CryptoProvider> fmt::Debug for Ukey2ServerStage1<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Ukey2ServerS1")
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> Ukey2ServerStage1<C, E> {
+impl<C: CryptoProvider> Ukey2ServerStage1<C> {
     pub fn from(
         next_protocols: hash_set::HashSet<String>,
         handshake_impl: HandshakeImplementation,
-        error_logger: E,
     ) -> Self {
         Self {
             next_protocols,
             handshake_impl,
-            error_logger,
             _marker: PhantomData,
         }
     }
@@ -146,7 +166,7 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ServerStage1<C, E> {
         rng: &mut R,
         client_init: ClientInit,
         client_init_msg_bytes: Vec<u8>,
-    ) -> Result<Ukey2ServerStage2<C, E>, ClientInitError> {
+    ) -> Result<Ukey2ServerStage2<C>, ClientInitError> {
         if client_init.version() != &1 {
             return Err(ClientInitError::BadVersion);
         }
@@ -170,28 +190,40 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ServerStage1<C, E> {
             .ok_or(ClientInitError::BadHandshakeCipher)?;
         match *commitment.cipher() {
             // pick in priority order
-            HandshakeCipher::Curve25519Sha512 => Ok(Ukey2ServerStage2::from(
-                client_init_msg_bytes,
-                commitment.clone(),
-                client_init.random(),
-                ServerKeyPair::Curve25519(
-                    <C::X25519 as EcdhProvider<X25519>>::EphemeralSecret::generate_random(rng),
-                ),
-                self.handshake_impl,
-                self.error_logger,
-                next_protocol.to_string(),
-            )),
-            HandshakeCipher::P256Sha512 => Ok(Ukey2ServerStage2::from(
-                client_init_msg_bytes,
-                commitment.clone(),
-                client_init.random(),
-                ServerKeyPair::P256(
-                    <C::P256 as EcdhProvider<P256>>::EphemeralSecret::generate_random(rng),
-                ),
-                self.handshake_impl,
-                self.error_logger,
-                next_protocol.to_string(),
-            )),
+            HandshakeCipher::Curve25519Sha512 => {
+                let secret = ServerKeyPair::Curve25519(
+                    <C::X25519 as EcdhProvider<X25519>>::EphemeralSecret::generate_random(&mut
+                        <<<C::X25519 as EcdhProvider<X25519>>::EphemeralSecret as EphemeralSecret<
+                            X25519,
+                        >>::Rng as CryptoRng>::new(),
+                    ),
+                );
+                Ok(Ukey2ServerStage2::from(
+                    &mut *rng,
+                    client_init_msg_bytes,
+                    commitment.clone(),
+                    secret,
+                    self.handshake_impl,
+                    next_protocol.to_string(),
+                ))
+            }
+            HandshakeCipher::P256Sha512 => {
+                let secret = ServerKeyPair::P256(
+                    <C::P256 as EcdhProvider<P256>>::EphemeralSecret::generate_random(
+                        &mut<<<C::P256 as EcdhProvider<P256>>::EphemeralSecret as EphemeralSecret<
+                            P256,
+                        >>::Rng as CryptoRng>::new(),
+                    ),
+                );
+                Ok(Ukey2ServerStage2::from(
+                    &mut *rng,
+                    client_init_msg_bytes,
+                    commitment.clone(),
+                    secret,
+                    self.handshake_impl,
+                    next_protocol.to_string(),
+                ))
+            }
         }
     }
 }
@@ -201,18 +233,17 @@ enum ServerKeyPair<C: CryptoProvider> {
     P256(<C::P256 as EcdhProvider<P256>>::EphemeralSecret),
 }
 
-pub struct Ukey2ServerStage2<C: CryptoProvider, E: ErrorHandler> {
+pub struct Ukey2ServerStage2<C: CryptoProvider> {
     client_init_msg: Vec<u8>,
     server_init_msg: Vec<u8>,
     commitment: CipherCommitment,
     key_pair: ServerKeyPair<C>,
     pub(crate) handshake_impl: HandshakeImplementation,
-    pub(crate) error_logger: E,
     next_protocol: String,
     _marker: PhantomData<C>,
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> fmt::Debug for Ukey2ServerStage2<C, E> {
+impl<C: CryptoProvider> fmt::Debug for Ukey2ServerStage2<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Ukey2ServerS2")
     }
@@ -221,16 +252,16 @@ impl<C: CryptoProvider, E: ErrorHandler> fmt::Debug for Ukey2ServerStage2<C, E> 
 const HKDF_SALT_AUTH: &[u8] = b"UKEY2 v1 auth";
 const HKDF_SALT_NEXT: &[u8] = b"UKEY2 v1 next";
 
-impl<C: CryptoProvider, E: ErrorHandler> Ukey2ServerStage2<C, E> {
-    fn from(
+impl<C: CryptoProvider> Ukey2ServerStage2<C> {
+    fn from<R: rand::Rng + rand::CryptoRng>(
+        rng: &mut R,
         client_init_msg: Vec<u8>,
         commitment: CipherCommitment,
-        random: &[u8; 32],
         key_pair: ServerKeyPair<C>,
         handshake_impl: HandshakeImplementation,
-        error_logger: E,
         next_protocol: String,
     ) -> Self {
+        let random: [u8; 32] = rng.gen();
         let mut server_init = ukey::Ukey2ServerInit::default();
         server_init.set_version(1);
         server_init.set_random(random.to_vec());
@@ -248,7 +279,6 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ServerStage2<C, E> {
             commitment,
             key_pair,
             handshake_impl,
-            error_logger,
             next_protocol,
             _marker: PhantomData,
         }
@@ -310,6 +340,9 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ServerStage2<C, E> {
     }
 }
 
+/// Representation of the UKEY2 server information after the handshake has been completed. An
+/// instance of this can be created by going through the handshake state machine (starting from
+/// [`Ukey2ServerStage1`]).
 pub struct Ukey2Server {
     completed_handshake: CompletedHandshake,
 }
@@ -326,7 +359,7 @@ impl Ukey2Server {
     }
 }
 
-pub struct Ukey2ClientStage1<C: CryptoProvider, E: ErrorHandler> {
+pub struct Ukey2ClientStage1<C: CryptoProvider> {
     curve25519_secret: <C::X25519 as EcdhProvider<X25519>>::EphemeralSecret,
     p256_secret: <C::P256 as EcdhProvider<P256>>::EphemeralSecret,
     curve25519_client_finished_bytes: Vec<u8>,
@@ -334,28 +367,30 @@ pub struct Ukey2ClientStage1<C: CryptoProvider, E: ErrorHandler> {
     client_init_bytes: Vec<u8>,
     commitment_ciphers: Vec<HandshakeCipher>,
     handshake_impl: HandshakeImplementation,
-    pub(crate) error_logger: E,
     next_protocol: String,
     _marker: PhantomData<C>,
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> fmt::Debug for Ukey2ClientStage1<C, E> {
+impl<C: CryptoProvider> fmt::Debug for Ukey2ClientStage1<C> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Ukey2Client1")
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> Ukey2ClientStage1<C, E> {
+impl<C: CryptoProvider> Ukey2ClientStage1<C> {
     pub fn from<R: rand::Rng + rand::SeedableRng + rand::CryptoRng>(
         rng: &mut R,
         next_protocol: String,
         handshake_impl: HandshakeImplementation,
-        error_logger: E,
     ) -> Self {
         let random = rng.gen::<[u8; 32]>().to_vec();
         // Curve25519 ClientFinished Message
         let curve25519_secret =
-            <C::X25519 as EcdhProvider<X25519>>::EphemeralSecret::generate_random(&mut *rng);
+            <C::X25519 as EcdhProvider<X25519>>::EphemeralSecret::generate_random(
+                &mut <<<C::X25519 as EcdhProvider<X25519>>::EphemeralSecret as EphemeralSecret<
+                    X25519,
+                >>::Rng as CryptoRng>::new(),
+            );
         let curve25519_client_finished_bytes = {
             let mut client_finished = ukey::Ukey2ClientFinished::default();
             client_finished.set_public_key(curve25519_secret.public_key_bytes());
@@ -365,8 +400,11 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ClientStage1<C, E> {
             C::Sha512::sha512(&curve25519_client_finished_bytes).to_vec();
 
         // P256 ClientFinished Message
-        let p256_secret =
-            <C::P256 as EcdhProvider<P256>>::EphemeralSecret::generate_random(&mut *rng);
+        let p256_secret = <C::P256 as EcdhProvider<P256>>::EphemeralSecret::generate_random(
+                        &mut<<<C::P256 as EcdhProvider<P256>>::EphemeralSecret as EphemeralSecret<
+                            P256,
+                        >>::Rng as CryptoRng>::new(),
+                    );
         let p256_client_finished_bytes = {
             let mut client_finished = ukey::Ukey2ClientFinished::default();
             client_finished.set_public_key(
@@ -411,7 +449,6 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ClientStage1<C, E> {
                 HandshakeCipher::P256Sha512,
             ],
             handshake_impl,
-            error_logger,
             next_protocol,
             _marker: PhantomData,
         }
@@ -431,7 +468,6 @@ impl<C: CryptoProvider, E: ErrorHandler> Ukey2ClientStage1<C, E> {
         }
 
         // loop over all commitments every time for a semblance of constant time-ness
-        // TODO better constant time way of doing this?
         let server_cipher = self
             .commitment_ciphers
             .iter()

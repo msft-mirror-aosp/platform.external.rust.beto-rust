@@ -41,14 +41,10 @@ class TestUkey2Protocol {
         val serverContext =
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         assertFalse(serverContext.isHandshakeComplete)
-        assertFalse(serverContext.canSendPayloadInHandshakeMessage())
         assertDoesNotThrow {
-            val handshakePart1 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-            val handshakePart2 =
-                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-            val handshakePart3 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             assertTrue(initiatorContext.isHandshakeComplete)
             assertTrue(serverContext.isHandshakeComplete)
         }
@@ -61,12 +57,9 @@ class TestUkey2Protocol {
         val serverContext =
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         assertDoesNotThrow {
-            val handshakePart1 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-            val handshakePart2 =
-                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-            val handshakePart3 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             val connContext = initiatorContext.toConnectionContext()
             val serverConnContext = serverContext.toConnectionContext()
             val initialShareString = "Nearby sharing to server"
@@ -88,12 +81,9 @@ class TestUkey2Protocol {
         val serverContext =
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         assertDoesNotThrow {
-            val handshakePart1 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-            val handshakePart2 =
-                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-            val handshakePart3 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             val connContext = initiatorContext.toConnectionContext()
             val serverConnContext = serverContext.toConnectionContext()
             val initiatorSavedSession = connContext.saveSession()
@@ -118,12 +108,9 @@ class TestUkey2Protocol {
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         val deriveInitiatorSavedSession = {
             assertDoesNotThrow {
-                val handshakePart1 =
-                    serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-                val handshakePart2 =
-                    initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-                val handshakePart3 =
-                    serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
                 val connContext = initiatorContext.toConnectionContext()
                 val serverConnContext = serverContext.toConnectionContext()
                 connContext.saveSession()
@@ -141,32 +128,15 @@ class TestUkey2Protocol {
         val serverContext =
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         assertDoesNotThrow {
-            val handshakePart1 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-            val handshakePart2 =
-                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-            val handshakePart3 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             val connContext = initiatorContext.toConnectionContext()
             val serverConnContext = serverContext.toConnectionContext()
         }
         assertThrows<BadHandleException> {
             val unused = serverContext.nextHandshakeMessage
         }
-    }
-
-    @Test
-    fun testLogger() {
-        val logger = TestLogger
-        val logInitiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, logger)
-        assertThrows<HandshakeException> {
-            val handshakePart1 = logInitiatorContext.parseHandshakeMessage("hello".toByteArray())
-            assertEquals(logger.level, Ukey2Logger.Severity.Error.ordinal)
-        }
-        assertNotEquals(logger.message, "")
-        assertNotEquals(logger.originLine, 0)
-        assertNotEquals(logger.originFile, "")
     }
 
     @Test
@@ -177,12 +147,9 @@ class TestUkey2Protocol {
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         val associatedData = "Associated data.".toByteArray()
         assertDoesNotThrow {
-            val handshakePart1 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-            val handshakePart2 =
-                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-            val handshakePart3 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             val connContext = initiatorContext.toConnectionContext()
             val serverConnContext = serverContext.toConnectionContext()
             val initialShareString = "Nearby sharing to server"
@@ -204,12 +171,9 @@ class TestUkey2Protocol {
         val serverContext =
             D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
         assertDoesNotThrow {
-            val handshakePart1 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
-            val handshakePart2 =
-                initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
-            val handshakePart3 =
-                serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
+            initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
+            serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
         }
         assert(serverContext.isHandshakeComplete)
         assert(initiatorContext.isHandshakeComplete)
