@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifdef BLAZE
-#include "testing/base/public/gunit.h"
-#else
 #include <gtest/gtest.h>
-#endif
 
 extern "C" {
 #include "np_ldt.h"
@@ -34,11 +30,7 @@ extern "C" {
 using namespace rapidjson;
 using namespace std;
 
-#ifdef BLAZE
-static const char* PATH_TO_DATA_FILE = "third_party/nearby_rust/presence/ldt_np_adv/resources/test/np_adv_test_vectors.json";
-#else
 static const char* PATH_TO_DATA_FILE = "../../../ldt_np_adv/resources/test/np_adv_test_vectors.json";
-#endif
 
 static const uint8_t KEY_SEED_BYTES[] = {204, 219, 36, 137, 233, 252, 172, 66, 179, 147, 72, 184, 148, 30, 209, 154, 29, 54, 14, 117, 224, 152, 200, 193, 94, 107, 28, 194, 182, 32, 205, 57};
 static const uint8_t KNOWN_HMAC_BYTES[] = {223, 185, 10, 31, 155, 31, 226, 141, 24, 187, 204, 165, 34, 64, 181, 204, 44, 203, 95, 141, 82, 137, 163, 203, 100, 235, 53, 65, 202, 97, 75, 180};

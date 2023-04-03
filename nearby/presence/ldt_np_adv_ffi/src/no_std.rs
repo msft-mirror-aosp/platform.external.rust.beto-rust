@@ -25,6 +25,7 @@ static ALLOCATOR: LibcAlloc = LibcAlloc;
 extern "C" fn eh_personality() {}
 
 #[alloc_error_handler]
+#[allow(clippy::panic)]
 fn default_handler(layout: core::alloc::Layout) -> ! {
     panic!("memory allocation of {} bytes failed", layout.size())
 }

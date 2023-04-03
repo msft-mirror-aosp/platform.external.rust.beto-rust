@@ -13,12 +13,10 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::sync::mpsc::Sender;
-use std::thread;
 
-use jni::objects::{GlobalRef, JClass, JObject, JString};
-use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject, JNI_TRUE};
-use jni::{JNIEnv, JavaVM};
+use jni::objects::JClass;
+use jni::sys::{jboolean, jbyteArray, jint, jlong, JNI_TRUE};
+use jni::JNIEnv;
 use lazy_static::lazy_static;
 use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;
@@ -30,7 +28,6 @@ use ukey2_connections::{
     HandshakeError, HandshakeImplementation, InitiatorD2DHandshakeContext,
     ServerD2DHandshakeContext,
 };
-use ukey2_rs::{ErrorHandler, Severity};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "rustcrypto")] {
@@ -75,67 +72,10 @@ enum JniError {
     HandshakeError(HandshakeError),
 }
 
-struct JniLogger {
-    tx: Sender<LogMessage>,
-}
-
-struct LogMessage(String, Severity, String, u32);
-
-impl JniLogger {
-    fn new(jvm: JavaVM, logger: GlobalRef) -> Self {
-        let (tx, rx) = std::sync::mpsc::channel::<LogMessage>();
-        thread::spawn(move || {
-            let attach_guard = jvm.attach_current_thread().unwrap();
-            let env = *attach_guard;
-            while let Ok(LogMessage(message, severity, origin_file, origin_line)) = rx.recv() {
-                let message_jval = {
-                    let msg_jstr: JString = env.new_string(message).unwrap();
-                    msg_jstr.into()
-                };
-                let origin_file_jval = {
-                    let origin_file_jstr: JString = env.new_string(origin_file).unwrap();
-                    origin_file_jstr.into()
-                };
-                if !env.exception_check().unwrap_or(false) {
-                    let _ = env.call_method(
-                        &logger,
-                        "log",
-                        "(ILjava/lang/String;Ljava/lang/String;I)V",
-                        &[
-                            (severity as jint).into(),
-                            message_jval,
-                            origin_file_jval,
-                            (origin_line as jint).into(),
-                        ],
-                    );
-                }
-            }
-        });
-        Self { tx }
-    }
-}
-
-impl ErrorHandler for JniLogger {
-    fn log_full_err(
-        &self,
-        severity: Severity,
-        message: String,
-        origin_file: &str,
-        origin_line: u32,
-    ) {
-        let _unused = self.tx.send(LogMessage(
-            message,
-            severity,
-            origin_file.to_string(),
-            origin_line,
-        ));
-    }
-}
-
 // D2DHandshakeContext
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_is_1handshake_1complete(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jboolean {
@@ -152,34 +92,20 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     is_complete as jboolean
 }
 
-/// # Safety
-/// We get a raw jobject as the logger from the Java program, so we need to convert that to an
-/// object with an explicit lifetime in order to pin it in the JVM.
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_create_1context(
-    env: JNIEnv,
+pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_create_1context(
+    _: JNIEnv,
     _: JClass,
     is_client: jboolean,
-    logger: jobject,
 ) -> jlong {
     if is_client == JNI_TRUE {
-        let client_obj = Box::new(InitiatorD2DHandshakeContext::<CryptoProvider, _>::new(
-            HandshakeImplementation::Weird,
-            JniLogger::new(
-                env.get_java_vm().unwrap(),
-                env.new_global_ref(unsafe { JObject::from_raw(logger) })
-                    .unwrap(),
-            ),
+        let client_obj = Box::new(InitiatorD2DHandshakeContext::<CryptoProvider>::new(
+            HandshakeImplementation::PublicKeyInProtobuf,
         ));
         insert_handshake_handle(client_obj) as jlong
     } else {
-        let server_obj = Box::new(ServerD2DHandshakeContext::<CryptoProvider, _>::new(
-            HandshakeImplementation::Weird,
-            JniLogger::new(
-                env.get_java_vm().unwrap(),
-                env.new_global_ref(unsafe { JObject::from_raw(logger) })
-                    .unwrap(),
-            ),
+        let server_obj = Box::new(ServerD2DHandshakeContext::<CryptoProvider>::new(
+            HandshakeImplementation::PublicKeyInProtobuf,
         ));
         insert_handshake_handle(server_obj) as jlong
     }
@@ -187,7 +113,7 @@ pub unsafe extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_get_1next_1handshake_1message(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -211,32 +137,14 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_can_1send_1payload_1in_1handshake_1message(
-    env: JNIEnv,
-    _: JClass,
-    context_handle: jlong,
-) -> jboolean {
-    let can_send = if let Some(ctx) = HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
-        ctx.can_send_payload_in_handshake_message()
-    } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
-        false
-    };
-    can_send as jboolean
-}
-
-#[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// Safety: We know the message pointer is safe as it is coming directly from the JVM.
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_parse_1handshake_1message(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     message: jbyteArray,
-) -> jbyteArray {
-    let empty_array = env.new_byte_array(0).unwrap();
+) {
     let rust_buffer = env.convert_byte_array(message).unwrap();
     let result = if let Some(ctx) = HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
         ctx.handle_handshake_message(rust_buffer.as_slice())
@@ -263,12 +171,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
             .expect("failed to find error class");
         }
     }
-    empty_array
 }
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_get_1verification_1string(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     length: jint,
@@ -312,7 +219,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_to_1connection_1context(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jlong {
@@ -341,8 +248,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
 
 // D2DConnectionContextV1
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// Safety: We know the payload and associated_data pointers are safe as they are coming directly
+/// from the JVM.
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_encode_1message_1to_1peer(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     payload: jbyteArray,
@@ -380,8 +290,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
 }
 
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// Safety: We know the message and associated_data pointers are safe as they are coming directly
+/// from the JVM.
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_decode_1message_1from_1peer(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     message: jbyteArray,
@@ -427,7 +340,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_get_1sequence_1number_1for_1encoding(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jint {
@@ -448,7 +361,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_get_1sequence_1number_1for_1decoding(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jint {
@@ -469,7 +382,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_save_1session(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -491,8 +404,10 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
 }
 
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+/// Safety: We know the session_info pointer is safe because it is coming directly from the JVM.
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_from_1saved_1session(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     session_info: jbyteArray,
 ) -> jlong {
@@ -519,7 +434,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
 
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_get_1session_1unique(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {

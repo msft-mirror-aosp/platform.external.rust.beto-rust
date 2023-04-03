@@ -1,4 +1,15 @@
-rust_library {
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "external_rust_beto-rust_license"
+    // to get the below license kinds:
+    //   legacy_unencumbered
+    //   SPDX-license-identifier-Apache-2.0
+    //   SPDX-license-identifier-Unlicense
+    default_applicable_licenses: ["external_rust_beto-rust_license"],
+}
+
+rust_library_rlib {
     name: "libcrypto_provider",
     host_supported: true,
     crate_name: "crypto_provider",
@@ -7,6 +18,7 @@ rust_library {
     srcs: ["crypto/crypto_provider/src/lib.rs"],
     edition: "2021",
     features: [
+        "std",
         "alloc",
         "default",
     ],
@@ -20,7 +32,7 @@ rust_library {
     ],
 }
 
-rust_library {
+rust_library_rlib {
     name: "libcrypto_provider_openssl",
     host_supported: true,
     crate_name: "crypto_provider_openssl",
@@ -52,10 +64,11 @@ rust_ffi_shared {
     srcs: ["connections/ukey2/ukey2_c_ffi/src/lib.rs"],
     edition: "2021",
     features: ["openssl"],
-    rustlibs: [
+    rlibs: [
         "libcfg_if",
         "libcrypto_provider_openssl",
         "liblazy_static",
+        "liblog_rust",
         "librand",
         "librand_chacha",
         "libspin_nostd",
@@ -68,7 +81,7 @@ rust_ffi_shared {
     ],
 }
 
-rust_library {
+rust_library_rlib {
     name: "libukey2_connections",
     host_supported: true,
     crate_name: "ukey2_connections",
@@ -79,6 +92,7 @@ rust_library {
     rustlibs: [
         "libbytes",
         "libcrypto_provider",
+        "libnom",
         "librand",
         "libukey2_proto",
         "libukey2_rs",
@@ -122,7 +136,7 @@ rust_ffi_shared {
     ],
 }
 
-rust_library {
+rust_library_rlib {
     name: "libukey2_proto",
     host_supported: true,
     crate_name: "ukey2_proto",
@@ -142,7 +156,7 @@ rust_library {
     ],
 }
 
-rust_library {
+rust_library_rlib {
     name: "libukey2_rs",
     host_supported: true,
     crate_name: "ukey2_rs",
@@ -153,6 +167,7 @@ rust_library {
     rustlibs: [
         "libcrypto_provider",
         "libnum_bigint",
+        "liblog_rust",
         "librand",
         "libukey2_proto",
     ],
