@@ -21,7 +21,7 @@ protobuf-compiler pkg-config libdbus-1-dev libssl-dev ninja-build
 RUN apt upgrade -y
 
 # install cargo with default settings
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.65.0
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.68.1
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN cargo install --locked cargo-deny --color never 2>&1
 RUN cargo install cargo-fuzz --color never 2>&1
@@ -30,13 +30,19 @@ RUN cargo install cargo-prefetch \
     --git https://github.com/marshallpierce/cargo-prefetch.git \
     --rev f6affa68e950275f9fd773f2646ab7ee4db82897 \
     --color never 2>&1
+# needed for generating boringssl bindings
+RUN cargo install bindgen-cli
 RUN rustup toolchain add nightly
-RUN curl -L https://go.dev/dl/go1.20.linux-amd64.tar.gz | tar -C /usr/local -xz
+RUN curl -L https://go.dev/dl/go1.20.2.linux-amd64.tar.gz | tar -C /usr/local -xz
 ENV PATH="$PATH:/usr/local/go/bin"
 RUN go install github.com/google/addlicense@latest
 
 # when the image runs build and test everything to ensure env is setup correctly
 CMD ["./scripts/check-everything.sh"]
+
+# needed for boringssl git operations
+RUN git config --global user.email "docker@example.com"
+RUN git config --global user.name "NP Docker"
 
 RUN mkdir -p /google/nearby
 WORKDIR /google/nearby
@@ -47,3 +53,4 @@ RUN cargo prefetch --lockfile Cargo.lock
 
 # copy repo into workdir of docker containter
 COPY . .
+

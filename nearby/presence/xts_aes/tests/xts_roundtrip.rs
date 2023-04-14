@@ -47,11 +47,7 @@ fn roundtrip_self() {
     fn do_roundtrip<A: Aes, R: rand::Rng>(xts: Xts<A>, rng: &mut R) {
         let plaintext_len_range = distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 4);
         let mut plaintext = Vec::<u8>::new();
-        plaintext.extend(
-            (0..rng.sample(plaintext_len_range))
-                .into_iter()
-                .map(|_| rng.gen::<u8>()),
-        );
+        plaintext.extend((0..rng.sample(plaintext_len_range)).map(|_| rng.gen::<u8>()));
 
         let mut ciphertext = plaintext.clone();
         let tweak: Tweak = rng.gen::<u128>().into();
@@ -118,11 +114,7 @@ fn identical_to_xtsmode_crate() {
         // 1-3 blocks
         let plaintext_len_range = distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 4);
         let mut plaintext = Vec::<u8>::new();
-        plaintext.extend(
-            (0..rng.sample(plaintext_len_range))
-                .into_iter()
-                .map(|_| rng.gen::<u8>()),
-        );
+        plaintext.extend((0..rng.sample(plaintext_len_range)).map(|_| rng.gen::<u8>()));
 
         // encrypt with our impl
         let mut ciphertext = plaintext.clone();

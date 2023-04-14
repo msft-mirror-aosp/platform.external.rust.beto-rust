@@ -175,3 +175,15 @@ fn verify_truncated_left<H: OpenSslHash>(hmac: Hmac<H>, tag: &[u8]) -> Result<()
         Err(MacError)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Openssl;
+    use core::marker::PhantomData;
+    use crypto_provider::hmac::testing::*;
+
+    #[apply(hmac_test_cases)]
+    fn hmac_tests(testcase: CryptoProviderTestCase<Openssl>) {
+        testcase(PhantomData);
+    }
+}

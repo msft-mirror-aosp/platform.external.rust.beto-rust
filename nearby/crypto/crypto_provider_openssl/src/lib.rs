@@ -17,14 +17,17 @@
 //! Crate which provides impls for CryptoProvider backed by openssl
 
 use cfg_if::cfg_if;
+use crypto_provider::CryptoRng;
 pub use openssl;
 use openssl::hash::MessageDigest;
 use openssl::md::MdRef;
+use openssl::rand::rand_bytes;
 
 /// Contains the openssl backed AES implementations for CryptoProvider
 mod aes;
 /// Contains the openssl backed ed25519 impl for key generation, verification, and signing
 mod ed25519;
+
 cfg_if! {
     if #[cfg(feature = "boringssl")] {
         /// Contains the boringssl backed hkdf impl for CryptoProvider
@@ -71,15 +74,30 @@ impl crypto_provider::CryptoProvider for Openssl {
     type P256 = p256::P256Ecdh;
     type Sha256 = sha2::OpenSslSha256;
     type Sha512 = sha2::OpenSslSha512;
-    type Aes128 = aes::OpenSslAes128;
-    type Aes256 = aes::OpenSslAes256;
+    type Aes128 = aes::Aes128;
+    type Aes256 = aes::Aes256;
     type AesCtr128 = aes::OpenSslAesCtr128;
     type AesCtr256 = aes::OpenSslAesCtr256;
-
     type Ed25519 = ed25519::Ed25519;
+    type CryptoRng = OpenSslRng;
 
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         a.len() == b.len() && openssl::memcmp::eq(a, b)
+    }
+}
+
+/// OpenSSL implemented random number generator
+pub struct OpenSslRng;
+
+impl CryptoRng for OpenSslRng {
+    fn new() -> Self {
+        OpenSslRng {}
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut buf = [0; 8];
+        rand_bytes(&mut buf).unwrap();
+        u64::from_be_bytes(buf)
     }
 }
 

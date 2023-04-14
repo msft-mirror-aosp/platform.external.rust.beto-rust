@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! An adapter that converts between generated protobuf types and native Rust types.
+
 use crypto_provider::elliptic_curve::EcdhProvider;
 use crypto_provider::p256::{P256EcdhProvider, P256PublicKey, P256};
 use crypto_provider::CryptoProvider;
@@ -25,7 +27,9 @@ trait WithMessageType: ukey2_proto::protobuf::Message {
 }
 
 pub(crate) trait ToWrappedMessage {
-    /// Encode self and wrap in a `Ukey2Message`
+    /// Wrap `self` in a `Ukey2Message`. Creates a new `Ukey2Message` with `message_type` set to
+    /// [`msg_type`][WithMessageType::msg_type] and `message_data` set to the serialized bytes for
+    /// the `self` proto.
     fn to_wrapped_msg(self) -> ukey::Ukey2Message;
 }
 
@@ -78,7 +82,6 @@ pub(crate) enum MessageType {
 #[derive(Getters)]
 pub(crate) struct ClientInit {
     version: i32,
-    random: [u8; 32],
     commitments: Vec<CipherCommitment>,
     next_protocol: String,
 }
@@ -97,9 +100,13 @@ pub(crate) struct ClientFinished {
     pub(crate) public_key: Vec<u8>,
 }
 
+/// The handshake cipher used for UKEY2 handshake. Corresponds to the proto message
+/// `ukey::Ukey2HandshakeCipher`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum HandshakeCipher {
+    /// NIST P-256 used for ECDH, SHA512 used for commitment
     P256Sha512,
+    /// Curve 25519 used for ECDH, SHA512 used for commitment
     Curve25519Sha512,
 }
 
@@ -174,10 +181,9 @@ impl IntoAdapter<CipherCommitment> for ukey::Ukey2ClientInit_CipherCommitment {
 
 impl IntoAdapter<ClientInit> for ukey::Ukey2ClientInit {
     fn into_adapter(self) -> Result<ClientInit, ukey::Ukey2Alert_AlertType> {
-        let random: [u8; 32] = self
-            .get_random()
-            .try_into()
-            .map_err(|_| ukey::Ukey2Alert_AlertType::BAD_RANDOM)?;
+        if self.get_random().len() != 32 {
+            return Err(ukey::Ukey2Alert_AlertType::BAD_RANDOM);
+        }
         if !self.has_version() {
             return Err(ukey::Ukey2Alert_AlertType::BAD_VERSION);
         }
@@ -187,7 +193,6 @@ impl IntoAdapter<ClientInit> for ukey::Ukey2ClientInit {
             return Err(ukey::Ukey2Alert_AlertType::BAD_NEXT_PROTOCOL);
         }
         Ok(ClientInit {
-            random,
             next_protocol,
             version,
             commitments: self
@@ -249,23 +254,12 @@ impl<C: CryptoProvider> IntoAdapter<GenericPublicKey<C>> for securemessage::Gene
         match key_type {
             PublicKeyType::Ec256 => {
                 let key = self.ec_p256_public_key.unwrap();
-                // TODO: condense
-                let key_x = num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, key.get_x())
-                    .to_biguint()
-                    .unwrap();
-                let key_y = num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, key.get_y())
-                    .to_biguint()
-                    .unwrap();
-                let key_x_bytes: [u8; 32] = key_x
-                    .to_bytes_be()
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| ukey::Ukey2Alert_AlertType::BAD_PUBLIC_KEY)?;
-                let key_y_bytes: [u8; 32] = key_y
-                    .to_bytes_be()
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| ukey::Ukey2Alert_AlertType::BAD_PUBLIC_KEY)?;
+                let key_x_bytes: [u8; 32] =
+                    positive_twos_complement_to_32_byte_unsigned(key.get_x())
+                        .ok_or(ukey::Ukey2Alert_AlertType::BAD_PUBLIC_KEY)?;
+                let key_y_bytes: [u8; 32] =
+                    positive_twos_complement_to_32_byte_unsigned(key.get_y())
+                        .ok_or(ukey::Ukey2Alert_AlertType::BAD_PUBLIC_KEY)?;
                 <C::P256 as P256EcdhProvider>::PublicKey::from_affine_coordinates(
                     &key_x_bytes,
                     &key_y_bytes,
@@ -282,5 +276,80 @@ impl<C: CryptoProvider> IntoAdapter<GenericPublicKey<C>> for securemessage::Gene
                 Err(ukey::Ukey2Alert_AlertType::BAD_PUBLIC_KEY)
             }
         }
+    }
+}
+
+/// Turns a big endian two's complement integer representation into big endian unsigned
+/// representation. If the input byte array is not positive or cannot be fit into 32 byte unsigned
+/// int range, then `None` is returned.
+fn positive_twos_complement_to_32_byte_unsigned(twos_complement: &[u8]) -> Option<[u8; 32]> {
+    if !twos_complement.is_empty() && (twos_complement[0] & 0x80) == 0 {
+        let mut twos_complement_iter = twos_complement.iter().rev();
+        let mut result = [0_u8; 32];
+        for (dst, src) in result.iter_mut().rev().zip(&mut twos_complement_iter) {
+            *dst = *src;
+        }
+        if twos_complement_iter.any(|x| *x != 0) {
+            // If any remaining elements are non-zero, the input cannot be fit into the 32 byte
+            // unsigned range
+            return None;
+        }
+        // No conversion needed since positive two's complement is the same as unsigned
+        Some(result)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_positive_twos_complement_to_32_byte_unsigned() {
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[]), // Empty input
+            None
+        );
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[0xff, 0x05, 0x05]), // Negative
+            None
+        );
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[0xff; 32]), // Negative
+            None
+        );
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[0x05; 34]), // Too long
+            None
+        );
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[0x05, 0xff]),
+            Some([
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x05, 0xff
+            ])
+        );
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[0x05, 0x05, 0x05]),
+            Some([
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x05, 0x05, 0x05
+            ])
+        );
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&[0x05; 32]),
+            Some([0x05; 32])
+        );
+        let mut input_33_bytes = [0xff_u8; 33];
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&input_33_bytes),
+            None // Negative input
+        );
+        input_33_bytes[0] = 0;
+        assert_eq!(
+            super::positive_twos_complement_to_32_byte_unsigned(&input_33_bytes),
+            Some([0xff; 32])
+        );
     }
 }
