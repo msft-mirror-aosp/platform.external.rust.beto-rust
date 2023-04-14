@@ -20,8 +20,9 @@ members = [
     "presence/xts_aes",
 ]
 
-# TODO: remove this once support for no_std + alloc no longer requires nightly
-exclude = ["presence/ldt_np_adv_ffi"]
+# TODO: remove ldt_np_adv_ffi once support for no_std + alloc no longer requires nightly
+# TODO: remove boringssl once we figure out a better plan for integrating the build system
+exclude = ["presence/ldt_np_adv_ffi", "crypto/crypto_provider_boringssl"]
 
 [workspace.dependencies]
 array_ref = {path = "presence/array_ref"}
@@ -41,6 +42,7 @@ ldt_tbc = {path = "presence/ldt_tbc"}
 
 # RustCrypto crates
 rand = { version = "0.8.5", default-features = false }
+rand_core = {version = "0.6.4"}
 rand_pcg = "0.3.1"
 sha2 = { version = "0.10.2", default-features = false }
 aes = "0.8.2"
@@ -48,7 +50,7 @@ cbc = { version = "0.1.2", features = ["alloc", "block-padding"] }
 ctr = "0.9.1"
 hkdf = "0.12.3"
 hmac = "0.12.1"
-ed25519-dalek = { version = "1.0.1" }
+ed25519-dalek = { version = "1.0.1", default-features = false }
 ed25519 = "1.5.3"
 aes-gcm = "0.10.1"
 hex = "0.4.3"
@@ -62,7 +64,7 @@ sec1 = "0.3.0"
 # AOSP's protobuf is only at 2.27.1 (http://cs/android-internal/external/rust/crates/protobuf/METADATA)
 protobuf = "2.27.1"
 protoc-rust = "2.27.1"
-jni = "0.20.0"
+jni = "0.21.1"
 spin = "0.9.4"
 anyhow = "1.0.64"
 log = "0.4.17"

@@ -27,6 +27,7 @@ pub mod testing {
     use crate::{
         elliptic_curve::{EcdhProvider, EphemeralSecret, EphemeralSecretForTesting, PublicKey},
         testing::TestError,
+        CryptoRng,
     };
     use core::marker::PhantomData;
     use hex_literal::hex;
@@ -72,9 +73,12 @@ pub mod testing {
 
     /// Random test for `PublicKey<X25519>::to_bytes`
     pub fn x25519_to_bytes_random_test<E: EcdhProviderForX25519Test>(_: PhantomData<E>) {
-        let mut rng = rand::thread_rng();
         for _ in 1..100 {
-            let public_key_bytes = E::EphemeralSecret::generate_random(&mut rng).public_key_bytes();
+            let public_key_bytes =
+                E::EphemeralSecret::generate_random(&mut <E::EphemeralSecret as EphemeralSecret<
+                    X25519,
+                >>::Rng::new())
+                .public_key_bytes();
             let public_key = E::PublicKey::from_bytes(&public_key_bytes).unwrap();
             assert_eq!(
                 E::PublicKey::from_bytes(&public_key.to_bytes()).unwrap(),

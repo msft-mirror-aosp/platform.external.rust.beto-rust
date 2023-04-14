@@ -29,8 +29,9 @@
 
 use array_ref::{array_mut_ref, array_ref};
 use core::fmt;
+use crypto_provider::aes::{Aes, AesCipher, AesDecryptCipher, AesEncryptCipher};
 use crypto_provider::{
-    aes::{Aes, AesKey, BLOCK_SIZE},
+    aes::{AesKey, BLOCK_SIZE},
     CryptoProvider,
 };
 
@@ -41,9 +42,12 @@ mod tweak_tests;
 
 /// Build an [Xts] with the provided [Aes] with separate block cipher keys.
 fn build_xts_aes_separate<A: Aes>(key1: &A::Key, key2: &A::Key) -> Xts<A> {
+    // TODO: split xts into encrypter and decrypter for better performance
     Xts {
-        main_cipher: A::new(key1),
-        tweak_cipher: A::new(key2),
+        main_encryption_cipher: A::EncryptCipher::new(key1),
+        main_decryption_cipher: A::DecryptCipher::new(key1),
+        tweak_encryption_cipher: A::EncryptCipher::new(key2),
+        tweak_decryption_cipher: A::DecryptCipher::new(key2),
     }
 }
 
@@ -73,8 +77,10 @@ pub fn build_xts_aes<K: XtsKey, A: Aes<Key = K::BlockCipherKey>>(key: &K) -> Xts
 /// There is no support for partial bytes (bit lengths that aren't a multiple of 8).
 #[repr(C)]
 pub struct Xts<A: Aes> {
-    tweak_cipher: A,
-    main_cipher: A,
+    main_encryption_cipher: A::EncryptCipher,
+    main_decryption_cipher: A::DecryptCipher,
+    tweak_encryption_cipher: A::EncryptCipher,
+    tweak_decryption_cipher: A::DecryptCipher,
 }
 
 type DataUnitPartsResult<'a> = Result<(&'a mut [u8], &'a mut [u8], &'a mut [u8]), XtsError>;
@@ -226,11 +232,12 @@ impl<A: Aes> Xts<A> {
     /// Returns an [XtsTweaked] configured with the specified tweak and a block number of 0.
     fn tweaked(&self, tweak: Tweak) -> XtsTweaked<A> {
         let mut bytes = tweak.bytes;
-        self.tweak_cipher.encrypt(&mut bytes);
+        self.tweak_encryption_cipher.encrypt(&mut bytes);
 
         XtsTweaked {
             tweak_state: TweakState::new(bytes),
-            cipher: &self.main_cipher,
+            enc_cipher: &self.main_encryption_cipher,
+            dec_cipher: &self.main_decryption_cipher,
         }
     }
 }
@@ -571,7 +578,8 @@ impl TweakState {
 /// level.
 struct XtsTweaked<'a, A: Aes> {
     tweak_state: TweakState,
-    cipher: &'a A,
+    enc_cipher: &'a A::EncryptCipher,
+    dec_cipher: &'a A::DecryptCipher,
 }
 
 impl<'a, A: Aes> XtsTweaked<'a, A> {
@@ -593,7 +601,7 @@ impl<'a, A: Aes> XtsTweaked<'a, A> {
     /// Encrypt a block in place using the configured tweak and current block number.
     fn encrypt_block(&self, block: &mut crypto_provider::aes::AesBlock) {
         array_xor(block, &self.tweak_state.tweak);
-        self.cipher.encrypt(block);
+        self.enc_cipher.encrypt(block);
         array_xor(block, &self.tweak_state.tweak);
     }
 
@@ -601,7 +609,7 @@ impl<'a, A: Aes> XtsTweaked<'a, A> {
         // CC = C ^ T
         array_xor(block, &self.tweak_state.tweak);
         // PP = decrypt CC
-        self.cipher.decrypt(block);
+        self.dec_cipher.decrypt(block);
         // P = PP ^ T
         array_xor(block, &self.tweak_state.tweak);
     }
