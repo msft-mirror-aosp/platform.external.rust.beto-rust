@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifdef BLAZE
-#include "third_party/benchmark/include/benchmark/benchmark.h"
-#else
 #include <benchmark/benchmark.h>
-#endif
 #include <ctime>
 
 #include "np_ldt.h"

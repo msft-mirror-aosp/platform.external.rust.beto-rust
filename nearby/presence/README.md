@@ -80,6 +80,11 @@ clang --version
 ```
 it should display the path to the homebrew version and not the xcode version.
 
+Some other dependencies you may need include:
+```
+brew install ninja bindgen
+```
+
 ## Examples
 
 Examples use [clap](https://docs.rs/clap/latest/clap/) for nice CLIs, so try

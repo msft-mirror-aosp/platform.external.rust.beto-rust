@@ -4,7 +4,7 @@ This is a general description of what is contained in each crate and how it shou
 -
 - Contains the state machine required to run the handshake
 - A new state type is return on each message exchanged with this state machine
-- Current status: Wire-compatible with existing implementations of UKEY2 using the HandshakeImplementation::Weird value.
+- Current status: Wire-compatible with existing implementations of UKEY2 using the HandshakeImplementation::PublicKeyInProtobuf value.
 - TODO: Improve error handling
 
 ```ukey2-connections```:
@@ -18,14 +18,14 @@ This is a general description of what is contained in each crate and how it shou
 -
 - Houses a JNI wrapper for the ````ukey2-connections```` crate
 - Includes a small Java test applet to test throwing exceptions and an example of how to use the library
-- Automatically uses the ```HandshakeImplementation::Weird``` implementation for compatibility with existing implementations.
+- Automatically uses the ```HandshakeImplementation::PublicKeyInProtobuf``` implementation for compatibility with existing implementations.
 - Current status: Working with the driver code in ```ukey2-jni/java```
 
 ```ukey2-c-ffi```:
 -
 - Houses a C interface for the Rust library
 - Includes a header that can be used to link against the library
-- Automatically uses the ```HandshakeImplementation::Weird``` implementation for compatibility with existing implementations.
+- Automatically uses the ```HandshakeImplementation::PublicKeyInProtobuf``` implementation for compatibility with existing implementations.
 - Current status: Handshake and message exchange working with the ```ukey2-c-ffi/cpp/``` test binary
 - To build the test binary, first build the FFI library with Cargo (only works on Linux) and then from ukey2-c-ffi: ```bazel (or blaze) build //cpp:ukey2```
 - TODO: Improve error handling
