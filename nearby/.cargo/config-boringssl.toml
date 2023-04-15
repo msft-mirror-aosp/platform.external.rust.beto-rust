@@ -1,7 +1,12 @@
+# The packages to override
+paths = [
+    "../boringssl-build/boringssl/build/rust/bssl-sys",
+    "../boringssl-build/rust-openssl/openssl",
+    "../boringssl-build/rust-openssl/openssl-sys",
+]
+
 [env]
 WORKSPACE_DIR = { value = "", relative = true }
 
-[patch.crates-io]
-bssl-sys = { path = "../boringssl-build/boringssl/build/rust" }
-openssl = { path = "../boringssl-build/rust-openssl/openssl" }
-openssl-sys = { path = "../boringssl-build/rust-openssl/openssl-sys" }
+
+

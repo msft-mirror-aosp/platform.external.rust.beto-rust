@@ -162,7 +162,7 @@ fn random_ldt_scenario<R: rand::Rng + rand::CryptoRng, F: ScanCipherFactory, D: 
 
 fn random_vec<R: rand::Rng>(rng: &mut R, len: usize) -> Vec<u8> {
     let mut bytes = Vec::<u8>::new();
-    bytes.extend((0..len).into_iter().map(|_| rng.gen::<u8>()));
+    bytes.extend((0..len).map(|_| rng.gen::<u8>()));
     bytes
 }
 

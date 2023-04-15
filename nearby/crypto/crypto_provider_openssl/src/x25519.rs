@@ -47,8 +47,9 @@ pub struct X25519PrivateKey(PKey<Private>);
 impl EphemeralSecret<X25519> for X25519PrivateKey {
     type Impl = X25519Ecdh;
     type Error = ErrorStack;
+    type Rng = ();
 
-    fn generate_random<R: rand::Rng + rand::CryptoRng>(_rng: &mut R) -> Self {
+    fn generate_random(_rng: &mut Self::Rng) -> Self {
         let private_key = openssl::pkey::PKey::generate_x25519().unwrap();
         Self(private_key)
     }

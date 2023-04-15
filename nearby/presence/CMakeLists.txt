@@ -30,5 +30,10 @@ if ( OPENSSL_FOUND )
 endif()
 
 add_subdirectory(ldt_np_c_sample)
-add_subdirectory(ldt_np_adv_ffi_fuzz)
+
+if (ENABLE_FUZZ)
+    message(STATUS "Building fuzzers")
+    add_subdirectory(ldt_np_adv_ffi_fuzz)
+endif()
+
 
