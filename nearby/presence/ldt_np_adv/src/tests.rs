@@ -21,8 +21,8 @@
 extern crate alloc;
 
 use crate::{
-    ldt_xts_aes_128, salt_padder, LdtAdvDecryptError, LdtAdvDecrypterAes, LdtXtsAes128, LegacySalt,
-    LDT_XTS_AES_MAX_LEN, NP_LEGACY_METADATA_KEY_LEN,
+    ldt_xts_aes_128, salt_padder, LdtAdvDecryptError, LdtAdvDecrypterAes128, LdtXtsAes128,
+    LegacySalt, LDT_XTS_AES_MAX_LEN, NP_LEGACY_METADATA_KEY_LEN,
 };
 use alloc::vec::Vec;
 use crypto_provider::CryptoProvider;
@@ -36,7 +36,7 @@ fn decrypt_matches_correct_ciphertext() {
     for _ in 0..1_000 {
         let test_state = make_test_components::<_, RustCrypto>(&mut rng);
 
-        let cipher = LdtAdvDecrypterAes {
+        let cipher = LdtAdvDecrypterAes128 {
             ldt: test_state.ldt,
             metadata_key_hmac: test_state.hmac,
             metadata_key_hmac_key: test_state.hmac_key,
@@ -58,7 +58,7 @@ fn decrypt_doesnt_match_when_ciphertext_mangled() {
         // mangle the ciphertext
         test_state.ciphertext[0] ^= 0xAA;
 
-        let cipher = LdtAdvDecrypterAes {
+        let cipher = LdtAdvDecrypterAes128 {
             ldt: test_state.ldt,
             metadata_key_hmac: test_state.hmac,
             metadata_key_hmac_key: test_state.hmac_key,
@@ -79,7 +79,7 @@ fn decrypt_doesnt_match_when_plaintext_doesnt_match_mac() {
         // mangle the mac
         test_state.hmac[0] ^= 0xAA;
 
-        let cipher = LdtAdvDecrypterAes {
+        let cipher = LdtAdvDecrypterAes128 {
             ldt: test_state.ldt,
             metadata_key_hmac: test_state.hmac,
             metadata_key_hmac_key: test_state.hmac_key,
@@ -99,7 +99,7 @@ fn encrypt_works() {
     for _ in 0..1_000 {
         let test_state = make_test_components::<_, RustCrypto>(&mut rng);
 
-        let cipher = LdtAdvDecrypterAes {
+        let cipher = LdtAdvDecrypterAes128 {
             ldt: test_state.ldt,
             metadata_key_hmac: test_state.hmac,
             metadata_key_hmac_key: test_state.hmac_key,
@@ -118,7 +118,7 @@ fn encrypt_works() {
 #[allow(deprecated)]
 fn encrypt_too_short_err() {
     let ldt = ldt_xts_aes_128::<RustCrypto>(&LdtKey::from_concatenated(&[0; 64]));
-    let adv_cipher = LdtAdvDecrypterAes {
+    let adv_cipher = LdtAdvDecrypterAes128 {
         ldt,
         metadata_key_hmac: [0; 32],
         metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<RustCrypto>::from([0; 32]),
@@ -135,7 +135,7 @@ fn encrypt_too_short_err() {
 #[allow(deprecated)]
 fn encrypt_too_long_err() {
     let ldt = ldt_xts_aes_128::<RustCrypto>(&LdtKey::from_concatenated(&[0; 64]));
-    let adv_cipher = LdtAdvDecrypterAes {
+    let adv_cipher = LdtAdvDecrypterAes128 {
         ldt,
         metadata_key_hmac: [0; 32],
         metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<RustCrypto>::from([0; 32]),
@@ -151,7 +151,7 @@ fn encrypt_too_long_err() {
 #[test]
 fn decrypt_too_short_err() {
     let ldt = ldt_xts_aes_128::<RustCrypto>(&LdtKey::from_concatenated(&[0; 64]));
-    let adv_cipher = LdtAdvDecrypterAes {
+    let adv_cipher = LdtAdvDecrypterAes128 {
         ldt,
         metadata_key_hmac: [0; 32],
         metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<RustCrypto>::from([0; 32]),
@@ -167,7 +167,7 @@ fn decrypt_too_short_err() {
 #[test]
 fn decrypt_too_long_err() {
     let ldt = ldt_xts_aes_128::<RustCrypto>(&LdtKey::from_concatenated(&[0; 64]));
-    let adv_cipher = LdtAdvDecrypterAes {
+    let adv_cipher = LdtAdvDecrypterAes128 {
         ldt,
         metadata_key_hmac: [0; 32],
         metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<RustCrypto>::from([0; 32]),

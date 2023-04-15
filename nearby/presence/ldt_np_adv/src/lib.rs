@@ -80,7 +80,7 @@ impl LdtAdvCipherConfig {
     }
 
     /// Build an LdtAdvCipher using XTS-AES128 and keys derived from the key seed.
-    pub fn build_adv_decrypter_xts_aes_128<C: CryptoProvider>(&self) -> LdtAdvDecrypterAes<C> {
+    pub fn build_adv_decrypter_xts_aes_128<C: CryptoProvider>(&self) -> LdtAdvDecrypterAes128<C> {
         let hkdf = np_hkdf::NpKeySeedHkdf::new(&self.key_seed);
 
         LdtAdvDecrypter {
@@ -112,7 +112,7 @@ pub struct LdtAdvDecrypter<
 }
 
 /// An LdtAdvCipher with block size set appropriately for AES.
-pub type LdtAdvDecrypterAes<C> = LdtAdvDecrypter<
+pub type LdtAdvDecrypterAes128<C> = LdtAdvDecrypter<
     { crypto_provider::aes::BLOCK_SIZE },
     LDT_XTS_AES_MAX_LEN,
     xts_aes::XtsAes128<C>,

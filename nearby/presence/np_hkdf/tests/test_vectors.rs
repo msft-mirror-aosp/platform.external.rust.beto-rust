@@ -96,24 +96,20 @@ fn hkdf_test_vectors() -> Result<(), anyhow::Error> {
         }
 
         {
-            let group = &tc["extended_adv_salt_hkdf"];
-            let ikm = extract_key_array::<16>(group, "adv_salt");
+            let group = &tc["extended_section_salt_hkdf"];
+            let ikm = extract_key_array::<16>(group, "section_salt");
             let salt = V1Salt::<RustCrypto>::from(ikm);
             assert_eq!(
-                extract_key_array::<16>(group, "derived_salt_no_section_no_de"),
-                salt.derive(None, None).unwrap(),
-            );
-            assert_eq!(
                 extract_key_array::<16>(group, "derived_salt_first_section_no_de"),
-                salt.derive(Some(0.into()), None).unwrap(),
+                salt.derive(None).unwrap(),
             );
             assert_eq!(
                 extract_key_array::<16>(group, "derived_salt_first_section_first_de"),
-                salt.derive(Some(0.into()), Some(0.into())).unwrap(),
+                salt.derive(Some(0.into())).unwrap(),
             );
             assert_eq!(
                 extract_key_array::<16>(group, "derived_salt_first_section_third_de"),
-                salt.derive(Some(0.into()), Some(2.into())).unwrap(),
+                salt.derive(Some(2.into())).unwrap(),
             );
         }
     }
@@ -161,13 +157,12 @@ fn gen_test_vectors() {
                     "expanded_key":
                         hex::encode_upper(legacy_metadata_expanded_key::<RustCrypto>(&legacy_metadata_key))
                 },
-                "extended_adv_salt_hkdf": {
-                    "adv_salt": hex::encode_upper(adv_salt_bytes),
-                    "derived_salt_no_section_no_de": hex::encode_upper(extended_adv_salt.derive::<16>(None, None).unwrap()),
+                "extended_section_salt_hkdf": {
+                    "section_salt": hex::encode_upper(adv_salt_bytes),
                     // 0-based offsets -> 1-based indexing
-                    "derived_salt_first_section_no_de": hex::encode_upper(extended_adv_salt.derive::<16>(Some(0.into()), None).unwrap()),
-                    "derived_salt_first_section_first_de": hex::encode_upper(extended_adv_salt.derive::<16>(Some(0.into()), Some(0.into())).unwrap()),
-                    "derived_salt_first_section_third_de": hex::encode_upper(extended_adv_salt.derive::<16>(Some(0.into()), Some(2.into())).unwrap()),
+                    "derived_salt_first_section_no_de": hex::encode_upper(extended_adv_salt.derive::<16>(None).unwrap()),
+                    "derived_salt_first_section_first_de": hex::encode_upper(extended_adv_salt.derive::<16>(Some(0.into())).unwrap()),
+                    "derived_salt_first_section_third_de": hex::encode_upper(extended_adv_salt.derive::<16>(Some(2.into())).unwrap()),
                 }
             }));
     }

@@ -1,4 +1,3 @@
-#![no_std]
 // Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#![no_std]
 #![forbid(unsafe_code)]
 #![deny(
     missing_docs,
@@ -40,32 +40,74 @@ mod x25519;
 
 pub use hkdf;
 pub use hmac;
+
+use cfg_if::cfg_if;
+use core::{fmt::Debug, marker::PhantomData};
+use rand::{RngCore, SeedableRng};
+use rand_core::CryptoRng;
 use subtle::ConstantTimeEq;
+
+cfg_if! {
+    if #[cfg(feature = "std")] {
+        /// Providing a type alias for compatibility with existing usage of RustCrypto
+        /// by default we use StdRng for the underlying csprng
+        pub type RustCrypto = RustCryptoImpl<rand::rngs::StdRng>;
+    } else {
+        /// A no_std compatible implementation of CryptoProvider backed by RustCrypto crates
+        pub type RustCrypto = RustCryptoImpl<rand_chacha::ChaCha20Rng>;
+    }
+}
 
 /// The the RustCrypto backed struct which implements CryptoProvider
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
-pub struct RustCrypto;
+pub struct RustCryptoImpl<R: CryptoRng + SeedableRng + RngCore> {
+    _marker: PhantomData<R>,
+}
 
-impl crypto_provider::CryptoProvider for RustCrypto {
+impl<R: CryptoRng + SeedableRng + RngCore> RustCryptoImpl<R> {
+    ///
+    pub fn new() -> Self {
+        Self {
+            _marker: Default::default(),
+        }
+    }
+}
+
+impl<R: CryptoRng + SeedableRng + RngCore + Eq + PartialEq + Debug + Clone + Send>
+    crypto_provider::CryptoProvider for RustCryptoImpl<R>
+{
     type HkdfSha256 = hkdf_rc::Hkdf<sha2::Sha256>;
     type HmacSha256 = hmac_rc::Hmac<sha2::Sha256>;
     type HkdfSha512 = hkdf_rc::Hkdf<sha2::Sha512>;
     type HmacSha512 = hmac_rc::Hmac<sha2::Sha512>;
     #[cfg(feature = "alloc")]
     type AesCbcPkcs7Padded = aes::cbc::AesCbcPkcs7Padded;
-    type X25519 = x25519::X25519Ecdh;
-    type P256 = p256::P256Ecdh;
+    type X25519 = x25519::X25519Ecdh<R>;
+    type P256 = p256::P256Ecdh<R>;
     type Sha256 = sha2_rc::RustCryptoSha256;
     type Sha512 = sha2_rc::RustCryptoSha512;
     type Aes128 = aes::Aes128;
     type Aes256 = aes::Aes256;
     type AesCtr128 = aes::AesCtr128;
     type AesCtr256 = aes::AesCtr256;
-
     type Ed25519 = ed25519::Ed25519;
+    type CryptoRng = RcRng<R>;
 
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         a.ct_eq(b).into()
+    }
+}
+
+/// A RustCrypto wrapper for RNG
+pub struct RcRng<R>(R);
+
+impl<R: rand_core::CryptoRng + RngCore + SeedableRng> crypto_provider::CryptoRng for RcRng<R> {
+    fn new() -> Self {
+        Self(R::from_entropy())
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0.next_u64()
     }
 }
 

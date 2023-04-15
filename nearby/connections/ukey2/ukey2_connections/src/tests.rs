@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crypto_provider_rustcrypto::RustCryptoImpl;
 use rand::SeedableRng;
 use rand::{rngs::StdRng, CryptoRng, RngCore};
 use rstest::rstest;
@@ -19,7 +20,6 @@ use rstest::rstest;
 use crypto_provider::CryptoProvider;
 use crypto_provider_openssl::Openssl;
 use crypto_provider_rustcrypto::RustCrypto;
-use ukey2_rs::error_handler::NoOpHandler;
 use ukey2_rs::HandshakeImplementation;
 
 use crate::{
@@ -30,7 +30,7 @@ use crate::{
 
 #[rstest]
 fn crypto_test_encrypt_decrypt<C: CryptoProvider>(
-    #[values(RustCrypto, Openssl)] _crypto_provider: C,
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
 ) {
     let message = b"Hello World!";
     let key = b"42424242424242424242424242424242";
@@ -44,7 +44,7 @@ fn crypto_test_encrypt_decrypt<C: CryptoProvider>(
 
 #[rstest]
 fn crypto_test_encrypt_seeded<C: CryptoProvider>(
-    #[values(RustCrypto, Openssl)] _crypto_provider: C,
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
 ) {
     let message = b"Hello World!";
     let key = b"42424242424242424242424242424242";
@@ -62,7 +62,7 @@ fn crypto_test_encrypt_seeded<C: CryptoProvider>(
 
 #[rstest]
 fn crypto_test_decrypt_seeded<C: CryptoProvider>(
-    #[values(RustCrypto, Openssl)] _crypto_provider: C,
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
 ) {
     let iv = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
     let ciphertext = [
@@ -74,7 +74,9 @@ fn crypto_test_decrypt_seeded<C: CryptoProvider>(
 }
 
 #[rstest]
-fn decrypt_test_wrong_key<C: CryptoProvider>(#[values(RustCrypto, Openssl)] _crypto_provider: C) {
+fn decrypt_test_wrong_key<C: CryptoProvider>(
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
+) {
     let message = b"Hello World!";
     let good_key = b"42424242424242424242424242424242";
     let (ciphertext, iv) = encrypt::<_, C::AesCbcPkcs7Padded>(
@@ -101,14 +103,12 @@ where
     C: CryptoProvider,
     R: rand::RngCore + rand::CryptoRng + rand::SeedableRng + Send,
 {
-    let mut initiator_ctx = InitiatorD2DHandshakeContext::<C, _, R>::new_impl(
+    let mut initiator_ctx = InitiatorD2DHandshakeContext::<C, R>::new_impl(
         HandshakeImplementation::Spec,
-        NoOpHandler::default(),
         R::from_rng(&mut rng).unwrap(),
     );
-    let mut server_ctx = ServerD2DHandshakeContext::<C, _, R>::new_impl(
+    let mut server_ctx = ServerD2DHandshakeContext::<C, R>::new_impl(
         HandshakeImplementation::Spec,
-        NoOpHandler::default(),
         R::from_rng(&mut rng).unwrap(),
     );
     server_ctx
@@ -146,7 +146,7 @@ where
 #[rstest]
 fn send_receive_message_seeded<C: CryptoProvider>(
     // TODO: Find a way to inject RNG / generated ephemeral secrets in openSSL and test them here
-    #[values(RustCrypto)] _crypto_provider: C,
+    #[values(RustCryptoImpl::<MockRng>::new())] _crypto_provider: C,
 ) {
     let rng = MockRng;
     let message = b"Hello World!";
@@ -172,7 +172,9 @@ fn send_receive_message_seeded<C: CryptoProvider>(
 }
 
 #[rstest]
-fn send_receive_message<C: CryptoProvider>(#[values(RustCrypto, Openssl)] _crypto_provider: C) {
+fn send_receive_message<C: CryptoProvider>(
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
+) {
     let message = b"Hello World!";
     let (mut init_conn_ctx, mut server_conn_ctx) = run_handshake::<C>();
     let encoded = init_conn_ctx.encode_message_to_peer::<C, &[u8]>(message, None);
@@ -183,7 +185,7 @@ fn send_receive_message<C: CryptoProvider>(#[values(RustCrypto, Openssl)] _crypt
 
 #[rstest]
 fn send_receive_message_associated_data<C: CryptoProvider>(
-    #[values(RustCrypto, Openssl)] _crypto_provider: C,
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
 ) {
     let message = b"Hello World!";
     let (mut init_conn_ctx, mut server_conn_ctx) = run_handshake::<C>();
@@ -203,7 +205,7 @@ fn send_receive_message_associated_data<C: CryptoProvider>(
 
 #[rstest]
 fn test_save_restore_session<C: CryptoProvider>(
-    #[values(RustCrypto, Openssl)] _crypto_provider: C,
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
 ) {
     let (init_conn_ctx, server_conn_ctx) = run_handshake::<C>();
     let init_session = init_conn_ctx.save_session();
@@ -223,7 +225,7 @@ fn test_save_restore_session<C: CryptoProvider>(
 
 #[rstest]
 fn test_save_restore_bad_session<C: CryptoProvider>(
-    #[values(RustCrypto, Openssl)] _crypto_provider: C,
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
 ) {
     let (init_conn_ctx, server_conn_ctx) = run_handshake::<C>();
     let init_session = init_conn_ctx.save_session();
@@ -231,15 +233,33 @@ fn test_save_restore_bad_session<C: CryptoProvider>(
     let _ = D2DConnectionContextV1::from_saved_session(init_session.as_slice())
         .expect("failed to restore client session");
     let server_restored_ctx = D2DConnectionContextV1::from_saved_session(&server_session[0..60]);
-    assert!(server_restored_ctx.is_err());
     assert_eq!(
-        server_restored_ctx.err().unwrap(),
+        server_restored_ctx.unwrap_err(),
         DeserializeError::BadDataLength
     );
 }
 
 #[rstest]
-fn test_unique_session<C: CryptoProvider>(#[values(RustCrypto, Openssl)] _crypto_provider: C) {
+fn test_save_restore_bad_protocol_version<C: CryptoProvider>(
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
+) {
+    let (init_conn_ctx, server_conn_ctx) = run_handshake::<C>();
+    let init_session = init_conn_ctx.save_session();
+    let mut server_session = server_conn_ctx.save_session();
+    let _ = D2DConnectionContextV1::from_saved_session(init_session.as_slice())
+        .expect("failed to restore client session");
+    server_session[0] = 0; // Change the protocol version to an invalid one (0)
+    let server_restored_ctx = D2DConnectionContextV1::from_saved_session(&server_session);
+    assert_eq!(
+        server_restored_ctx.unwrap_err(),
+        DeserializeError::BadProtocolVersion
+    );
+}
+
+#[rstest]
+fn test_unique_session<C: CryptoProvider>(
+    #[values(RustCrypto::new(), Openssl)] _crypto_provider: C,
+) {
     let (mut init_conn_ctx, mut server_conn_ctx) = run_handshake::<C>();
     let init_session = init_conn_ctx.get_session_unique::<C>();
     let server_session = server_conn_ctx.get_session_unique::<C>();
@@ -282,6 +302,7 @@ fn test_java_hashcode() {
 /// changing the expected output. The downside is that code that keeps looping
 /// and generating a new random number until it fits certain criteria will hang
 /// indefinitely.
+#[derive(Eq, PartialEq, Clone, Debug)]
 struct MockRng;
 
 impl SeedableRng for MockRng {
