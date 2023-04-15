@@ -14,18 +14,31 @@
 
 extern crate alloc;
 
-use ::p256::elliptic_curve::generic_array::GenericArray;
-use ::p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use crate::RcRng;
 use alloc::vec::Vec;
-use crypto_provider::elliptic_curve::{EcdhProvider, EphemeralSecret};
-use crypto_provider::p256::P256;
-use p256::elliptic_curve;
+use core::marker::PhantomData;
+use crypto_provider::{
+    elliptic_curve::{EcdhProvider, EphemeralSecret},
+    p256::P256,
+};
+use p256::{
+    elliptic_curve,
+    elliptic_curve::{
+        generic_array::GenericArray,
+        sec1::{FromEncodedPoint, ToEncodedPoint},
+    },
+};
+use rand::{RngCore, SeedableRng};
+use rand_core::CryptoRng;
 
 /// Implementation of NIST-P256 using RustCrypto crates.
-pub enum P256Ecdh {}
-impl EcdhProvider<P256> for P256Ecdh {
+pub struct P256Ecdh<R> {
+    _marker: PhantomData<R>,
+}
+
+impl<R: CryptoRng + SeedableRng + RngCore + Send> EcdhProvider<P256> for P256Ecdh<R> {
     type PublicKey = P256PublicKey;
-    type EphemeralSecret = P256EphemeralSecret;
+    type EphemeralSecret = P256EphemeralSecret<R>;
     type SharedSecret = [u8; 32];
 }
 
@@ -69,18 +82,25 @@ impl crypto_provider::p256::P256PublicKey for P256PublicKey {
 }
 
 /// Ephemeral secrect for use in a P256 Diffie-Hellman
-pub struct P256EphemeralSecret(::p256::ecdh::EphemeralSecret);
+pub struct P256EphemeralSecret<R: CryptoRng + SeedableRng + RngCore> {
+    secret: p256::ecdh::EphemeralSecret,
+    _marker: PhantomData<R>,
+}
 
-impl EphemeralSecret<P256> for P256EphemeralSecret {
-    type Impl = P256Ecdh;
+impl<R: CryptoRng + SeedableRng + RngCore + Send> EphemeralSecret<P256> for P256EphemeralSecret<R> {
+    type Impl = P256Ecdh<R>;
     type Error = sec1::Error;
+    type Rng = RcRng<R>;
 
-    fn generate_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self {
-        Self(::p256::ecdh::EphemeralSecret::random(rng))
+    fn generate_random(rng: &mut Self::Rng) -> Self {
+        Self {
+            secret: p256::ecdh::EphemeralSecret::random(&mut rng.0),
+            _marker: Default::default(),
+        }
     }
 
     fn public_key_bytes(&self) -> Vec<u8> {
-        self.0
+        self.secret
             .public_key()
             .to_encoded_point(false)
             .as_bytes()
@@ -91,7 +111,7 @@ impl EphemeralSecret<P256> for P256EphemeralSecret {
         self,
         other_pub: &P256PublicKey,
     ) -> Result<<Self::Impl as EcdhProvider<P256>>::SharedSecret, Self::Error> {
-        let shared_secret = p256::ecdh::EphemeralSecret::diffie_hellman(&self.0, &other_pub.0);
+        let shared_secret = p256::ecdh::EphemeralSecret::diffie_hellman(&self.secret, &other_pub.0);
         let bytes: <Self::Impl as EcdhProvider<P256>>::SharedSecret =
             (*shared_secret.raw_secret_bytes()).into();
         Ok(bytes)
@@ -99,14 +119,19 @@ impl EphemeralSecret<P256> for P256EphemeralSecret {
 }
 
 #[cfg(test)]
-impl crypto_provider::elliptic_curve::EphemeralSecretForTesting<P256> for P256EphemeralSecret {
+impl<R: CryptoRng + SeedableRng + RngCore + Send>
+    crypto_provider::elliptic_curve::EphemeralSecretForTesting<P256> for P256EphemeralSecret<R>
+{
     fn from_private_components(
         private_bytes: &[u8; 32],
         _public_key: &P256PublicKey,
     ) -> Result<Self, Self::Error> {
-        Ok(Self::generate_random(&mut crate::testing::MockCryptoRng {
-            values: private_bytes.iter(),
-        }))
+        Ok(Self {
+            secret: p256::ecdh::EphemeralSecret::random(&mut crate::testing::MockCryptoRng {
+                values: private_bytes.iter(),
+            }),
+            _marker: Default::default(),
+        })
     }
 }
 
@@ -115,9 +140,10 @@ mod tests {
     use super::P256Ecdh;
     use core::marker::PhantomData;
     use crypto_provider::p256::testing::*;
+    use rand::rngs::StdRng;
 
     #[apply(p256_test_cases)]
-    fn p256_tests(testcase: CryptoProviderTestCase<P256Ecdh>) {
-        testcase(PhantomData::<P256Ecdh>)
+    fn p256_tests(testcase: CryptoProviderTestCase<P256Ecdh<StdRng>>) {
+        testcase(PhantomData::<P256Ecdh<StdRng>>)
     }
 }
