@@ -11,7 +11,7 @@ third_party {
     type: GIT
     value: "https://team.googlesource.com/beto-rust-devs/beto-core-staging"
   }
-  version: "f2200e8a3e42a9f411ad3f89fb4ce5f0b985fc31"
-  last_upgrade_date { year: 2023 month: 4 day: 11 }
+  version: "cf6c62c6e28c808634a13a7be092edef40ec6104"
+  last_upgrade_date { year: 2023 month: 4 day: 20 }
   license_type: NOTICE
 }

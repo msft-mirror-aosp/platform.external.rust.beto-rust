@@ -87,8 +87,18 @@ pub trait CryptoRng {
     /// Returns an instance of the rng
     fn new() -> Self;
 
-    ///Return the next random u64
+    /// Return the next random u64
     fn next_u64(&mut self) -> u64;
+
+    /// Fill dest with random data
+    fn fill(&mut self, dest: &mut [u8]);
+
+    /// Generate a random byte
+    fn gen<U8>(&mut self) -> u8 {
+        let mut arr = [0u8; 1];
+        self.fill(&mut arr);
+        arr[0]
+    }
 }
 
 /// If impls want to opt out of passing a Rng they can simply use `()` for the Rng associated type
@@ -96,6 +106,10 @@ impl CryptoRng for () {
     fn new() -> Self {}
 
     fn next_u64(&mut self) -> u64 {
+        unimplemented!()
+    }
+
+    fn fill(&mut self, _dest: &mut [u8]) {
         unimplemented!()
     }
 }

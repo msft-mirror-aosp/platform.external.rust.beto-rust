@@ -24,6 +24,7 @@
 //! Crate which provides impls for CryptoProvider backed by BoringSSL.
 
 use bssl_crypto::digest::{Sha256, Sha512};
+use bssl_crypto::rand::rand_bytes;
 use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_stubs::*;
 
@@ -72,7 +73,11 @@ impl CryptoRng for BoringSslRng {
 
     fn next_u64(&mut self) -> u64 {
         let mut buf = [0; 8];
-        bssl_crypto::rand::rand_bytes(&mut buf);
+        rand_bytes(&mut buf);
         u64::from_be_bytes(buf)
+    }
+
+    fn fill(&mut self, dest: &mut [u8]) {
+        rand_bytes(dest)
     }
 }

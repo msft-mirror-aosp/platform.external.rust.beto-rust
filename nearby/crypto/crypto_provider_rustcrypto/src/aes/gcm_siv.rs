@@ -13,8 +13,10 @@
 // limitations under the License.
 
 use aes_gcm_siv::{AeadInPlace, Aes128GcmSiv, Aes256GcmSiv, KeyInit, Nonce};
+extern crate alloc;
+use alloc::vec::Vec;
 
-use crypto_provider::aes::gcm_siv::{bytes, GcmSivError};
+use crypto_provider::aes::gcm_siv::GcmSivError;
 use crypto_provider::aes::{Aes128Key, Aes256Key, AesKey};
 
 pub struct AesGcmSiv128(Aes128GcmSiv);
@@ -26,23 +28,13 @@ impl crypto_provider::aes::gcm_siv::AesGcmSiv for AesGcmSiv128 {
         Self(Aes128GcmSiv::new(key.as_slice().into()))
     }
 
-    fn encrypt(
-        &self,
-        data: &mut bytes::BytesMut,
-        aad: &[u8],
-        nonce: &[u8],
-    ) -> Result<(), GcmSivError> {
+    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
         self.0
             .encrypt_in_place(Nonce::from_slice(nonce), aad, data)
             .map_err(|_| GcmSivError::EncryptOutBufferTooSmall)
     }
 
-    fn decrypt(
-        &self,
-        data: &mut bytes::BytesMut,
-        aad: &[u8],
-        nonce: &[u8],
-    ) -> Result<(), GcmSivError> {
+    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
         self.0
             .decrypt_in_place(Nonce::from_slice(nonce), aad, data)
             .map_err(|_| GcmSivError::DecryptTagDoesNotMatch)
@@ -58,23 +50,13 @@ impl crypto_provider::aes::gcm_siv::AesGcmSiv for AesGcmSiv256 {
         Self(Aes256GcmSiv::new(key.as_slice().into()))
     }
 
-    fn encrypt(
-        &self,
-        data: &mut bytes::BytesMut,
-        aad: &[u8],
-        nonce: &[u8],
-    ) -> Result<(), GcmSivError> {
+    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
         self.0
             .encrypt_in_place(Nonce::from_slice(nonce), aad, data)
             .map_err(|_| GcmSivError::EncryptOutBufferTooSmall)
     }
 
-    fn decrypt(
-        &self,
-        data: &mut bytes::BytesMut,
-        aad: &[u8],
-        nonce: &[u8],
-    ) -> Result<(), GcmSivError> {
+    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
         self.0
             .decrypt_in_place(Nonce::from_slice(nonce), aad, data)
             .map_err(|_| GcmSivError::DecryptTagDoesNotMatch)
