@@ -21,8 +21,8 @@ fuzz_target!(|data: LdtNpDecryptFuzzInput| {
     // try to decrypt data that won't pass validation
     let salt = data.salt.into();
     let padder = salt_padder::<16, RustCrypto>(salt);
-    let cipher_config = LdtAdvCipherConfig::new(data.key_seed, data.metadata_key_hmac);
-    let cipher = cipher_config.build_adv_decrypter_xts_aes_128::<RustCrypto>();
+    let hkdf = np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&data.key_seed);
+    let cipher = build_np_adv_decrypter_from_key_seed::<RustCrypto>(&hkdf, data.metadata_key_hmac);
 
     let len = 16 + (data.len as usize % 16);
     let ciphertext = data.ciphertext;

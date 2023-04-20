@@ -30,12 +30,15 @@ mod handle_map;
 
 extern crate alloc;
 
+use crate::handle_map::get_dec_handle_map;
 use alloc::boxed::Box;
 use core::slice;
-use handle_map::get_handle_map;
+use handle_map::get_enc_handle_map;
 use ldt_np_adv::{
-    salt_padder, LdtAdvCipherConfig, LdtAdvDecryptError, LdtAdvDecrypterAes128, LegacySalt,
+    build_np_adv_decrypter_from_key_seed, salt_padder, LdtAdvDecryptError, LdtEncrypterXtsAes128,
+    LdtNpAdvDecrypterXtsAes128, LegacySalt,
 };
+use np_hkdf::NpKeySeedHkdf;
 
 // Pull in the needed deps for std vs no_std
 cfg_if::cfg_if! {
@@ -67,7 +70,8 @@ cfg_if::cfg_if! {
     }
 }
 
-pub(crate) type LdtAdvDecrypter = LdtAdvDecrypterAes128<CryptoProviderImpl>;
+pub(crate) type LdtAdvDecrypter = LdtNpAdvDecrypterXtsAes128<CryptoProviderImpl>;
+pub(crate) type LdtAdvEncrypter = LdtEncrypterXtsAes128<CryptoProviderImpl>;
 
 const SUCCESS: i32 = 0;
 
@@ -86,18 +90,53 @@ struct NpLdtSalt {
     bytes: [u8; 2],
 }
 
-#[no_mangle]
-extern "C" fn NpLdtCreate(key_seed: NpLdtKeySeed, metadata_key_hmac: NpMetadataKeyHmac) -> u64 {
-    let ldt_adv_cipher_config = LdtAdvCipherConfig::new(key_seed.bytes, metadata_key_hmac.bytes);
-    let cipher = ldt_adv_cipher_config.build_adv_decrypter_xts_aes_128::<CryptoProviderImpl>();
-    get_handle_map().insert::<CryptoProviderImpl>(Box::new(cipher))
+#[repr(C)]
+struct NpLdtEncryptHandle {
+    handle: u64,
+}
+
+#[repr(C)]
+struct NpLdtDecryptHandle {
+    handle: u64,
 }
 
 #[no_mangle]
-extern "C" fn NpLdtClose(handle: u64) -> i32 {
+extern "C" fn NpLdtDecryptCreate(
+    key_seed: NpLdtKeySeed,
+    metadata_key_hmac: NpMetadataKeyHmac,
+) -> NpLdtDecryptHandle {
+    let cipher = build_np_adv_decrypter_from_key_seed(
+        &NpKeySeedHkdf::new(&key_seed.bytes),
+        metadata_key_hmac.bytes,
+    );
+    let handle = get_dec_handle_map().insert::<CryptoProviderImpl>(Box::new(cipher));
+    NpLdtDecryptHandle { handle }
+}
+
+#[no_mangle]
+extern "C" fn NpLdtEncryptCreate(key_seed: NpLdtKeySeed) -> NpLdtEncryptHandle {
+    let cipher = LdtAdvEncrypter::new(
+        &NpKeySeedHkdf::<CryptoProviderImpl>::new(&key_seed.bytes).legacy_ldt_key(),
+    );
+    let handle = get_enc_handle_map().insert::<CryptoProviderImpl>(Box::new(cipher));
+    NpLdtEncryptHandle { handle }
+}
+
+#[no_mangle]
+extern "C" fn NpLdtEncryptClose(handle: NpLdtEncryptHandle) -> i32 {
     map_to_error_code(|| {
-        get_handle_map()
-            .remove(&handle)
+        get_enc_handle_map()
+            .remove(&handle.handle)
+            .ok_or(CloseCipherError::InvalidHandle)
+            .map(|_| 0)
+    })
+}
+
+#[no_mangle]
+extern "C" fn NpLdtDecryptClose(handle: NpLdtDecryptHandle) -> i32 {
+    map_to_error_code(|| {
+        get_dec_handle_map()
+            .remove(&handle.handle)
             .ok_or(CloseCipherError::InvalidHandle)
             .map(|_| 0)
     })
@@ -108,7 +147,7 @@ extern "C" fn NpLdtClose(handle: u64) -> i32 {
 // and get rid of this.
 #[allow(deprecated)]
 extern "C" fn NpLdtEncrypt(
-    handle: u64,
+    handle: NpLdtEncryptHandle,
     buffer: *mut u8,
     buffer_len: usize,
     salt: NpLdtSalt,
@@ -116,8 +155,8 @@ extern "C" fn NpLdtEncrypt(
     map_to_error_code(|| {
         let data = unsafe { slice::from_raw_parts_mut(buffer, buffer_len) };
         let padder = salt_padder::<16, CryptoProviderImpl>(LegacySalt::from(salt.bytes));
-        get_handle_map()
-            .get(&handle)
+        get_enc_handle_map()
+            .get(&handle.handle)
             .map(|cipher| {
                 cipher
                     .encrypt(data, &padder)
@@ -132,7 +171,7 @@ extern "C" fn NpLdtEncrypt(
 
 #[no_mangle]
 extern "C" fn NpLdtDecryptAndVerify(
-    handle: u64,
+    handle: NpLdtDecryptHandle,
     buffer: *mut u8,
     buffer_len: usize,
     salt: NpLdtSalt,
@@ -141,8 +180,8 @@ extern "C" fn NpLdtDecryptAndVerify(
         let data = unsafe { slice::from_raw_parts_mut(buffer, buffer_len) };
         let padder = salt_padder::<16, CryptoProviderImpl>(LegacySalt::from(salt.bytes));
 
-        get_handle_map()
-            .get(&handle)
+        get_dec_handle_map()
+            .get(&handle.handle)
             .map(|cipher| {
                 cipher
                     .decrypt_and_verify(data, &padder)

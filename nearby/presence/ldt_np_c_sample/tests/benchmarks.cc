@@ -37,7 +37,7 @@ public:
     size_t payload_len;
     uint8_t* payload;
     NpLdtSalt* salt;
-    vector<NpLdtHandle> handles;
+    vector<tuple<NpLdtEncryptHandle, NpLdtDecryptHandle>> handles;
     vector<tuple<NpLdtKeySeed*, NpMetadataKeyHmac*>> configs;
 
     void SetUp(const ::benchmark::State& state)
@@ -63,21 +63,18 @@ private:
     {
         for(int i = 0; i < num_ciphers; i++)
         {
-            NpLdtHandle handle = buildCipherFromRand();
-            handles.push_back(handle);
+            NpLdtKeySeed* key_seed = (NpLdtKeySeed*) malloc(sizeof(NpLdtKeySeed));
+            NpMetadataKeyHmac* known_hmac = (NpMetadataKeyHmac*) malloc(sizeof(NpMetadataKeyHmac));
+
+            generateRandomBytes(key_seed->bytes, 32);
+            generateRandomBytes(known_hmac->bytes, 32);
+
+            configs.push_back(tuple<NpLdtKeySeed*, NpMetadataKeyHmac*>(key_seed, known_hmac));
+            auto enc_handle = NpLdtEncryptCreate(*key_seed);
+            auto dec_handle = NpLdtDecryptCreate(*key_seed, *known_hmac);
+
+            handles.push_back(tuple<NpLdtEncryptHandle, NpLdtDecryptHandle>(enc_handle, dec_handle));
         }
-    }
-
-    NpLdtHandle buildCipherFromRand()
-    {
-        NpLdtKeySeed* key_seed = (NpLdtKeySeed*) malloc(sizeof(NpLdtKeySeed));
-        NpMetadataKeyHmac* known_hmac = (NpMetadataKeyHmac*) malloc(sizeof(NpMetadataKeyHmac));
-
-        generateRandomBytes(key_seed->bytes, 32);
-        generateRandomBytes(known_hmac->bytes, 32);
-
-        configs.push_back(tuple<NpLdtKeySeed*, NpMetadataKeyHmac*>(key_seed, known_hmac));
-        return NpLdtCreate(*key_seed, *known_hmac);
     }
 
     void generatePayload()
@@ -100,9 +97,13 @@ private:
 
     void freeCiphers()
     {
-        for(NpLdtHandle handle : handles)
+        for(tuple<NpLdtEncryptHandle, NpLdtDecryptHandle> handle : handles)
         {
-            NpLdtClose(handle);
+            auto enc_handle = std::get<0>(handle);
+            NpLdtEncryptClose(enc_handle);
+
+            auto dec_handle = std::get<1>(handle);
+            NpLdtDecryptClose(dec_handle);
         }
     }
 
@@ -120,9 +121,10 @@ BENCHMARK_DEFINE_F(NpLdtFfiBenchmark, DecryptExistingCiphers)(benchmark::State& 
 {
     for (auto _ : state)
     {
-        for(NpLdtHandle handle : handles)
+        for(tuple<NpLdtEncryptHandle, NpLdtDecryptHandle> handle : handles)
         {
-            NpLdtDecryptAndVerify(handle, payload, payload_len, *salt);
+            auto dec_handle = std::get<1>(handle);
+            NpLdtDecryptAndVerify(dec_handle, payload, payload_len, *salt);
         }
     }
 };
@@ -135,7 +137,7 @@ BENCHMARK_DEFINE_F(NpLdtFfiBenchmark, DecryptFreshCiphers)(benchmark::State& sta
     {
         for(tuple<NpLdtKeySeed*, NpMetadataKeyHmac*> values : configs)
         {
-            NpLdtHandle handle = NpLdtCreate(*std::get<0>(values), *std::get<1>(values));
+            NpLdtDecryptHandle handle = NpLdtDecryptCreate(*std::get<0>(values), *std::get<1>(values));
             NpLdtDecryptAndVerify(handle, payload, payload_len, *salt);
         }
     }

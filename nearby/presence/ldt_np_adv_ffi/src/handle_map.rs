@@ -14,6 +14,7 @@
 
 use crate::Box;
 use crate::LdtAdvDecrypter;
+use crate::LdtAdvEncrypter;
 use core::marker::PhantomData;
 use crypto_provider::{CryptoProvider, CryptoRng};
 use lazy_static::lazy_static;
@@ -42,10 +43,19 @@ cfg_if::cfg_if! {
         }
 
         // returns a thread safe instance of the global static hashmap tracking the cipher handles
-        pub (crate) fn get_handle_map() -> MutexGuard<'static, HandleMap<Box<LdtAdvDecrypter>>> {
+        pub (crate) fn get_enc_handle_map() -> MutexGuard<'static, HandleMap<Box<LdtAdvEncrypter>>> {
             // Note even in the case of an error, the lock is still acquired, it just means whichever
             // thread was holding it panicked, we will continue on as either way we acquired the lock
-            HANDLE_MAP
+            ENCRYPT_HANDLE_MAP
+                .lock()
+                .unwrap_or_else(|err_guard| err_guard.into_inner())
+        }
+
+        // returns a thread safe instance of the global static hashmap tracking the cipher handles
+        pub (crate) fn get_dec_handle_map() -> MutexGuard<'static, HandleMap<Box<LdtAdvDecrypter>>> {
+            // Note even in the case of an error, the lock is still acquired, it just means whichever
+            // thread was holding it panicked, we will continue on as either way we acquired the lock
+            DECRYPT_HANDLE_MAP
                 .lock()
                 .unwrap_or_else(|err_guard| err_guard.into_inner())
         }
@@ -69,8 +79,13 @@ cfg_if::cfg_if! {
         }
 
         // returns a thread safe instance of the global static hashmap tracking the cipher handles
-        pub (crate) fn get_handle_map() -> MutexGuard<'static, HandleMap<Box<LdtAdvDecrypter>>> {
-            HANDLE_MAP.lock()
+        pub (crate) fn get_enc_handle_map() -> MutexGuard<'static, HandleMap<Box<LdtAdvEncrypter>>> {
+            ENCRYPT_HANDLE_MAP.lock()
+        }
+
+        // returns a thread safe instance of the global static hashmap tracking the cipher handles
+        pub (crate) fn get_dec_handle_map() -> MutexGuard<'static, HandleMap<Box<LdtAdvDecrypter>>> {
+            DECRYPT_HANDLE_MAP.lock()
         }
     }
 }
@@ -78,7 +93,10 @@ cfg_if::cfg_if! {
 // Global hashmap to track valid pointers, this is a safety precaution to make sure we are not
 // reading from unsafe memory address's passed in by caller.
 lazy_static! {
-    static ref HANDLE_MAP: Mutex<HandleMap<Box<LdtAdvDecrypter>>> = Mutex::new(HandleMap::init());
+    static ref ENCRYPT_HANDLE_MAP: Mutex<HandleMap<Box<LdtAdvEncrypter>>> =
+        Mutex::new(HandleMap::init());
+    static ref DECRYPT_HANDLE_MAP: Mutex<HandleMap<Box<LdtAdvDecrypter>>> =
+        Mutex::new(HandleMap::init());
 }
 
 impl<T> HandleMap<T> {

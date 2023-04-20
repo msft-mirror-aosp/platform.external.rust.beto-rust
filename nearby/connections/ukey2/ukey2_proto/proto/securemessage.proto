@@ -36,6 +36,7 @@ enum SigScheme {
   ECDSA_P256_SHA256 = 2;
   // Not recommended -- use ECDSA_P256_SHA256 instead
   RSA2048_SHA256 = 3;
+  AEAD = 4;
 }
 
 // Supported encryption schemes
@@ -43,6 +44,7 @@ enum EncScheme {
   // No encryption
   NONE = 1;
   AES_256_CBC = 2;
+  AES_256_GCM_SIV = 3;
 }
 
 message Header {
@@ -59,6 +61,8 @@ message Header {
   // The length of some associated data this is not sent in this SecureMessage,
   // but which will be bound to the signature.
   optional uint32 associated_data_length = 7 [default = 0];
+  // Encryption may use a nonce. Required for AES-256-GCM-SIV.
+  optional bytes nonce = 8;
 }
 
 message HeaderAndBody {

@@ -16,8 +16,9 @@
 
 use clap::Parser as _;
 use crypto_provider_rustcrypto::RustCrypto;
-use ldt::{Ldt, LdtKey, Mix, Swap, XorPadder};
+use ldt::{LdtDecryptCipher, LdtEncryptCipher, LdtKey, Mix, Swap, XorPadder};
 
+use crypto_provider::{CryptoProvider, CryptoRng};
 use ldt_tbc::TweakableBlockCipher;
 use rand::{distributions, seq::SliceRandom, Rng as _, SeedableRng as _};
 use sha2::digest::{generic_array, Digest as _};
@@ -29,11 +30,13 @@ use xts_aes::XtsAes128;
 
 fn main() {
     let args = Args::parse();
-    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
 
     // generate a suitable number of random keys
     let scenarios = (0..args.keys)
-        .map(|_| random_ldt_scenario::<16, XtsAes128<RustCrypto>, Swap, _>(&mut rng, args.len))
+        .map(|_| {
+            random_ldt_scenario::<16, XtsAes128<RustCrypto>, Swap, RustCrypto>(&mut rng, args.len)
+        })
         .collect::<Vec<_>>();
 
     let padder = XorPadder::from([0x42; crypto_provider::aes::BLOCK_SIZE]);
@@ -42,13 +45,13 @@ fn main() {
         .iter()
         .map(|s| {
             let mut ciphertext = s.plaintext.clone();
-            s.ldt.encrypt(&mut ciphertext[..], &padder).unwrap();
+            s.ldt_enc.encrypt(&mut ciphertext[..], &padder).unwrap();
             ciphertext
         })
         .collect::<Vec<_>>();
 
     let not_found_distrib = distributions::Uniform::from(0_f64..=100_f64);
-    let unfindable_ciphertext = random_vec(&mut rng, args.len);
+    let unfindable_ciphertext = random_vec::<RustCrypto>(&mut rng, args.len);
 
     let mut histogram = hdrhistogram::Histogram::<u64>::new(3).unwrap();
     let mut buf = Vec::new();
@@ -56,12 +59,13 @@ fn main() {
     let mut hasher = sha2::Sha256::new();
     let mut hash_output = generic_array::GenericArray::default();
 
+    let mut rc_rng = rand::rngs::StdRng::from_entropy();
     let found = (0..args.trials)
         .map(|_| {
-            let ciphertext = if rng.sample(not_found_distrib) <= args.not_found_pct as f64 {
+            let ciphertext = if rc_rng.sample(not_found_distrib) <= args.not_found_pct as f64 {
                 &unfindable_ciphertext
             } else {
-                ciphertexts.choose(&mut rng).unwrap()
+                ciphertexts.choose(&mut rc_rng).unwrap()
             };
 
             let start = time::Instant::now();
@@ -71,7 +75,7 @@ fn main() {
 
                 buf.clear();
                 buf.extend_from_slice(ciphertext.as_slice());
-                scenario.ldt.decrypt(&mut buf, &padder).unwrap();
+                scenario.ldt_dec.decrypt(&mut buf, &padder).unwrap();
 
                 hasher.update(&buf[..MATCH_LEN]);
                 hasher.finalize_into_reset(&mut hash_output);
@@ -127,23 +131,20 @@ struct Args {
 const MATCH_LEN: usize = 16;
 
 struct LdtScenario<const B: usize, T: TweakableBlockCipher<B>, M: Mix> {
-    ldt: Ldt<B, T, M>,
+    ldt_enc: LdtEncryptCipher<B, T, M>,
+    ldt_dec: LdtDecryptCipher<B, T, M>,
     plaintext: Vec<u8>,
     plaintext_prefix_hash: [u8; 32],
 }
 
-fn random_ldt_scenario<
-    const B: usize,
-    T: TweakableBlockCipher<B>,
-    M: Mix,
-    R: rand::Rng + rand::CryptoRng,
->(
-    rng: &mut R,
+fn random_ldt_scenario<const B: usize, T: TweakableBlockCipher<B>, M: Mix, C: CryptoProvider>(
+    rng: &mut C::CryptoRng,
     plaintext_len: usize,
 ) -> LdtScenario<B, T, M> {
-    let ldt_key: LdtKey<T::Key> = LdtKey::from_random(rng);
-    let ldt: Ldt<B, T, M> = Ldt::new(&ldt_key);
-    let plaintext = random_vec(rng, plaintext_len);
+    let ldt_key: LdtKey<T::Key> = LdtKey::from_random::<C>(rng);
+    let ldt_enc = LdtEncryptCipher::new(&ldt_key);
+    let ldt_dec = LdtDecryptCipher::new(&ldt_key);
+    let plaintext = random_vec::<C>(rng, plaintext_len);
 
     let mut hasher = sha2::Sha256::new();
     let mut plaintext_prefix_hash = generic_array::GenericArray::default();
@@ -151,7 +152,8 @@ fn random_ldt_scenario<
     hasher.finalize_into_reset(&mut plaintext_prefix_hash);
 
     LdtScenario {
-        ldt,
+        ldt_enc,
+        ldt_dec,
         plaintext,
         plaintext_prefix_hash: plaintext_prefix_hash.into(),
     }
