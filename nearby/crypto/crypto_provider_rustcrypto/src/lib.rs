@@ -43,7 +43,7 @@ pub use hmac;
 
 use cfg_if::cfg_if;
 use core::{fmt::Debug, marker::PhantomData};
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand_core::CryptoRng;
 use subtle::ConstantTimeEq;
 
@@ -65,7 +65,7 @@ pub struct RustCryptoImpl<R: CryptoRng + SeedableRng + RngCore> {
 }
 
 impl<R: CryptoRng + SeedableRng + RngCore> RustCryptoImpl<R> {
-    ///
+    /// Create a new instance of RustCrypto
     pub fn new() -> Self {
         Self {
             _marker: Default::default(),
@@ -108,6 +108,10 @@ impl<R: rand_core::CryptoRng + RngCore + SeedableRng> crypto_provider::CryptoRng
 
     fn next_u64(&mut self) -> u64 {
         self.0.next_u64()
+    }
+
+    fn fill(&mut self, dest: &mut [u8]) {
+        self.0.fill(dest)
     }
 }
 

@@ -148,7 +148,7 @@ rust_library_rlib {
         "default",
     ],
     rustlibs: [
-        "libprotobuf_deprecated",
+        "libprotobuf",
     ],
     apex_available: [
         "//apex_available:platform",

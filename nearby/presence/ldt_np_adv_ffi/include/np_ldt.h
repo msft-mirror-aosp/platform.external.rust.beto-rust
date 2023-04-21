@@ -19,9 +19,6 @@
 //
 // [1] https://eprint.iacr.org/2017/841.pdf
 
-// TODO pluggable memory allocation for embedded
-
-// TODO include guard name based on final file location
 #ifndef NP_LDT_H_
 #define NP_LDT_H_
 
@@ -35,22 +32,33 @@ extern "C" {
 // Individual encrypt/decrypt API, useful when creating advertisements or when
 // decrypting advertisements from a known origin
 
-// Handle for accessing the rust ldt implementation apis
-typedef uint64_t NpLdtHandle;
-
 // Key material from the Nearby Presence credential from which keys will be
 // derived.
 typedef struct {
   uint8_t bytes[32];
 } NpLdtKeySeed;
 
+// The calculated hmac key used for verifying successful decryption of
+// credential metadata
 typedef struct{
   uint8_t bytes[32];
 } NpMetadataKeyHmac;
 
+// The big-endian  2 byte salt which will be incorporated into the tweaks LDT
+// uses while encrypting.
 typedef struct {
   uint8_t bytes[2];
 } NpLdtSalt;
+
+// The allocated handle to use for encryption
+typedef struct {
+  uint64_t handle;
+} NpLdtEncryptHandle;
+
+// The allocated handle to use for decryption
+typedef struct {
+  uint64_t handle;
+} NpLdtDecryptHandle;
 
 // Possible result codes returned from the LDT NP APIs
 typedef enum {
@@ -64,20 +72,33 @@ typedef enum {
   NP_LDT_INVALID_HANDLE = -3
 } NP_LDT_RESULT;
 
-// Allocate an LDT-XTS-AES128 cipher using the "swap" mix function.
+// Allocate an LDT-XTS-AES128 Decryption cipher using the "swap" mix function.
 //
-// `aes_config` defines the AES impl that will be used.
+// `key_seed` is the key material from the Nearby Presence credential from which
+// the LDT key will be derived.
+// 'hmac_tag' is the hmac auth tag calculated on the metadata key used to verify
+// decryption was successful
+//
+// Returns 0 on error, or a non-zero handle on success.
+NpLdtDecryptHandle NpLdtDecryptCreate(NpLdtKeySeed key_seed, NpMetadataKeyHmac hmac_tag);
+
+// Allocate an LDT-XTS-AES128 Encryption cipher using the "swap" mix function.
+//
 // `key_seed` is the key material from the Nearby Presence credential from which
 // the LDT key will be derived.
 //
 // Returns 0 on error, or a non-zero handle on success.
-NpLdtHandle NpLdtCreate(NpLdtKeySeed key_seed, NpMetadataKeyHmac known_hmac);
+NpLdtEncryptHandle NpLdtEncryptCreate(NpLdtKeySeed key_seed);
 
-// Release resources for an NpLdtHandle allocated by
-// `np_ldt_create_xts_aes_128`.
+// Release allocated resources for an NpLdtEncryptHandle
 //
 // Returns 0 on success or an NP_LDT_RESULT error code on failure
-NP_LDT_RESULT NpLdtClose(NpLdtHandle handle);
+NP_LDT_RESULT NpLdtEncryptClose(NpLdtEncryptHandle handle);
+
+// Release allocated resources for an NpLdtDecryptHandle
+//
+// Returns 0 on success or an NP_LDT_RESULT error code on failure
+NP_LDT_RESULT NpLdtDecryptClose(NpLdtDecryptHandle handle);
 
 // Encrypt a 16-31 byte buffer in-place.
 //
@@ -88,7 +109,7 @@ NP_LDT_RESULT NpLdtClose(NpLdtHandle handle);
 //
 // Returns 0 on success, in which case `buffer` will now contain ciphertext.
 // Returns an NP_LDT_RESULT error code on failure
-NP_LDT_RESULT NpLdtEncrypt(NpLdtHandle handle, uint8_t* buffer, size_t buffer_len,
+NP_LDT_RESULT NpLdtEncrypt(NpLdtEncryptHandle handle, uint8_t* buffer, size_t buffer_len,
                      NpLdtSalt salt);
 
 // Decrypt a 16-31 byte buffer in-place and verify the plaintext metadata key matches
@@ -102,9 +123,9 @@ NP_LDT_RESULT NpLdtEncrypt(NpLdtHandle handle, uint8_t* buffer, size_t buffer_le
 //
 // Returns 0 on success, in which case `buffer` will now contain plaintext.
 // Returns an NP_LDT_RESULT error code on failure
-/// - If the buffer has an invalid length
-/// - If the decrypted plaintext fails its HMAC validation
-NP_LDT_RESULT NpLdtDecryptAndVerify(NpLdtHandle handle, uint8_t* buffer, size_t buffer_len,
+// - If the buffer has an invalid length
+// - If the decrypted plaintext fails its HMAC validation
+NP_LDT_RESULT NpLdtDecryptAndVerify(NpLdtDecryptHandle handle, uint8_t* buffer, size_t buffer_len,
                      NpLdtSalt salt);
 
 #ifdef __cplusplus

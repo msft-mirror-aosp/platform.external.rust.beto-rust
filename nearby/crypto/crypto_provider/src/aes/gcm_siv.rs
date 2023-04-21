@@ -13,10 +13,10 @@
 // limitations under the License.
 
 //! Traits for AES-GCM-SIV.
-pub use bytes;
-use bytes::BytesMut;
 
 use super::AesKey;
+extern crate alloc;
+use alloc::vec::Vec;
 
 /// An enum for indicating issues with the GCM-SIV encryption/decryption operations.
 pub enum GcmSivError {
@@ -40,11 +40,11 @@ pub trait AesGcmSiv {
     /// Encrypt the data in place with a nonce to make sure each ciphertext is unique.
     /// This will need 16 bytes reserved in the data array for the tag.
     /// Optionally, additional associated data can be passed in for computation of the cryptographic tag.
-    fn encrypt(&self, data: &mut BytesMut, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError>;
+    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError>;
     /// Decrypt the ciphertext concatenated with its tag in place with the nonce used for encryption.
     /// If associated data was passed in when creating the ciphertext, it should be passed in here as well
     /// in order to properly decrypt the message.
-    fn decrypt(&self, data: &mut BytesMut, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError>;
+    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError>;
 }
 
 /// Module for testing implementations of this crate.
@@ -52,9 +52,9 @@ pub trait AesGcmSiv {
 pub mod testing {
     extern crate alloc;
 
+    use alloc::vec::Vec;
     use core::marker;
 
-    use bytes::BytesMut;
     use hex_literal::hex;
     use rstest_reuse::template;
 
@@ -71,7 +71,7 @@ pub mod testing {
         let nonce = hex!("030000000000000000000000");
         let aes = A::new(&test_key.into());
         let msg = hex!("");
-        let mut buf = BytesMut::from(msg.as_slice());
+        let mut buf = Vec::from(msg.as_slice());
         let tag = hex!("dc20e2d83f25705bb49e439eca56de25");
         assert!(aes.encrypt(&mut buf, b"", &nonce).is_ok());
         assert_eq!(&buf[..], &tag);
@@ -79,7 +79,7 @@ pub mod testing {
         let msg = hex!("0100000000000000");
         let ct = hex!("b5d839330ac7b786");
         let tag = hex!("578782fff6013b815b287c22493a364c");
-        let mut buf = BytesMut::from(msg.as_slice());
+        let mut buf = Vec::from(msg.as_slice());
         assert!(aes.encrypt(&mut buf, b"", &nonce).is_ok());
         assert_eq!(&buf[..8], &ct);
         assert_eq!(&buf[8..], &tag);
@@ -95,7 +95,7 @@ pub mod testing {
         let nonce = hex!("030000000000000000000000");
         let aes = A::new(&test_key.into());
         let msg = hex!("0100000000000000");
-        let mut buf = BytesMut::new();
+        let mut buf = Vec::new();
         buf.extend_from_slice(&msg);
         let ct = hex!("c2ef328e5c71c83b");
         let tag = hex!("843122130f7364b761e0b97427e3df28");
@@ -108,7 +108,7 @@ pub mod testing {
         let msg = hex!("010000000000000000000000");
         let ct = hex!("9aab2aeb3faa0a34aea8e2b1");
         let tag = hex!("8ca50da9ae6559e48fd10f6e5c9ca17e");
-        let mut buf = BytesMut::from(msg.as_slice());
+        let mut buf = Vec::from(msg.as_slice());
         assert!(aes.encrypt(&mut buf, b"", &nonce).is_ok());
         assert_eq!(&buf[..12], &ct);
         assert_eq!(&buf[12..], &tag);

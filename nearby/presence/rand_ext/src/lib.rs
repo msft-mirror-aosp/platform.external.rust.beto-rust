@@ -20,19 +20,34 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use crypto_provider::{CryptoProvider, CryptoRng};
 use log::info;
 pub use rand;
-use rand::{Rng as _, SeedableRng as _};
+use rand::{Rng as _, SeedableRng};
 
-/// Returns a random vec with the provided length.
-pub fn random_vec<R: rand::Rng>(rng: &mut R, len: usize) -> Vec<u8> {
+/// Returns a random Vec with the provided length.
+pub fn random_vec<C: CryptoProvider>(rng: &mut C::CryptoRng, len: usize) -> Vec<u8> {
     let mut bytes = Vec::<u8>::new();
     bytes.extend((0..len).map(|_| rng.gen::<u8>()));
     bytes
 }
 
 /// Returns a random array with the provided length.
-pub fn random_bytes<const B: usize, R: rand::Rng>(rng: &mut R) -> [u8; B] {
+pub fn random_bytes<const B: usize, C: CryptoProvider>(rng: &mut C::CryptoRng) -> [u8; B] {
+    let mut bytes = [0; B];
+    rng.fill(bytes.as_mut_slice());
+    bytes
+}
+
+/// Uses a RustCrypto Rng to return a random Vec with the provided length
+pub fn random_vec_rc<R: rand::Rng>(rng: &mut R, len: usize) -> Vec<u8> {
+    let mut bytes = Vec::<u8>::new();
+    bytes.extend((0..len).map(|_| rng.gen::<u8>()));
+    bytes
+}
+
+/// Uses a RustCrypto Rng to return random bytes with the provided length
+pub fn random_bytes_rc<const B: usize, R: rand::Rng>(rng: &mut R) -> [u8; B] {
     let mut bytes = [0; B];
     rng.fill(bytes.as_mut_slice());
     bytes

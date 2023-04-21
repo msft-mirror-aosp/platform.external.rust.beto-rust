@@ -145,7 +145,9 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     context_handle: jlong,
     message: jbyteArray,
 ) {
-    let rust_buffer = env.convert_byte_array(message).unwrap();
+    let rust_buffer = env
+        .convert_byte_array(message)
+        .unwrap();
     let result = if let Some(ctx) = HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
         ctx.handle_handshake_message(rust_buffer.as_slice())
             .map_err(JniError::HandleMessageError)
@@ -266,11 +268,16 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
         .get_mut(&(context_handle as u64))
     {
         Ok(ctx.encode_message_to_peer::<CryptoProvider, _>(
-            env.convert_byte_array(payload).unwrap().as_slice(),
+            env.convert_byte_array(payload)
+                .unwrap()
+                .as_slice(),
             if associated_data.is_null() {
                 None
             } else {
-                Some(env.convert_byte_array(associated_data).unwrap())
+                Some(
+                    env.convert_byte_array(associated_data)
+                        .unwrap(),
+                )
             },
         ))
     } else {
@@ -306,11 +313,16 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
         .get_mut(&(context_handle as u64))
     {
         ctx.decode_message_from_peer::<CryptoProvider, _>(
-            env.convert_byte_array(message).unwrap().as_slice(),
+            env.convert_byte_array(message)
+                .unwrap()
+                .as_slice(),
             if associated_data.is_null() {
                 None
             } else {
-                Some(env.convert_byte_array(associated_data).unwrap())
+                Some(
+                    env.convert_byte_array(associated_data)
+                        .unwrap(),
+                )
             },
         )
         .map_err(JniError::DecodeError)
@@ -414,7 +426,8 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     let session_info_rust = env
         .convert_byte_array(session_info)
         .expect("bad session_info data");
-    let ctx = D2DConnectionContextV1::from_saved_session(session_info_rust.as_slice());
+    let ctx =
+        D2DConnectionContextV1::from_saved_session::<CryptoProvider>(session_info_rust.as_slice());
     if ctx.is_err() {
         env.throw_new(
             "com/google/security/cryptauth/lib/securegcm/SessionRestoreException",

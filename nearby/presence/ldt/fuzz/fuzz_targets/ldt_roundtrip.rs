@@ -19,14 +19,16 @@ use libfuzzer_sys::fuzz_target;
 use xts_aes::XtsAes128;
 
 fuzz_target!(|data: LdtFuzzInput| {
-    let ldt =
-        Ldt::<16, XtsAes128<RustCrypto>, Swap>::new(&LdtKey::from_concatenated(&data.ldt_key));
+    let ldt_enc =
+        LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&LdtKey::from_concatenated(&data.ldt_key));
+    let ldt_dec =
+        LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&LdtKey::from_concatenated(&data.ldt_key));
     let len = 16 + (data.len as usize % 16);
     let padder: XorPadder<16> = data.xor_padder.clone().into();
 
     let mut buffer = data.plaintext.clone();
-    ldt.encrypt(&mut buffer[..len], &padder).unwrap();
-    ldt.decrypt(&mut buffer[..len], &padder).unwrap();
+    ldt_enc.encrypt(&mut buffer[..len], &padder).unwrap();
+    ldt_dec.decrypt(&mut buffer[..len], &padder).unwrap();
     assert_eq!(data.plaintext, buffer);
 });
 
