@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 use arbitrary::Arbitrary;
 use crypto_provider_rustcrypto::RustCrypto;
 use libfuzzer_sys::fuzz_target;

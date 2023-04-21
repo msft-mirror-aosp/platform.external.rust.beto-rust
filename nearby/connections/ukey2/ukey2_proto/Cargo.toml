@@ -16,5 +16,5 @@ cargo = []
 diff = "0.1.13"
 
 [build-dependencies]
-protoc-rust.workspace = true
+protobuf-codegen.workspace = true
 

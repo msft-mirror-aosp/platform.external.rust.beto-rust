@@ -17,8 +17,11 @@ extern crate core;
 use anyhow::anyhow;
 use crypto_provider::CryptoProvider;
 use crypto_provider_rustcrypto::RustCrypto;
+use ldt_tbc::TweakableBlockCipherDecrypter;
+use ldt_tbc::TweakableBlockCipherEncrypter;
+use ldt_tbc::TweakableBlockCipherKey;
 use std::{collections::hash_map, fs, io, io::BufRead as _};
-use xts_aes::{self, build_xts_aes, XtsAes128Key, XtsAes256Key, XtsKey};
+use xts_aes::{self, XtsAes128Key, XtsAes256Key, XtsDecrypter, XtsEncrypter, XtsKey};
 
 #[test]
 fn nist_test_vectors_data_unit_seq_128() -> Result<(), anyhow::Error> {
@@ -55,7 +58,7 @@ fn nist_test_vectors_hex_tweak_256() -> Result<(), anyhow::Error> {
 
 fn run_test_cases<K, A>(path: &str, expected_num_cases: usize) -> Result<(), anyhow::Error>
 where
-    K: XtsKey,
+    K: XtsKey + TweakableBlockCipherKey,
     A: crypto_provider::aes::Aes<Key = K::BlockCipherKey>,
 {
     let test_cases = parse_test_vector(path)?;
@@ -65,24 +68,32 @@ where
     for tc in test_cases {
         buf.clear();
 
-        let xts = build_xts_aes::<_, A>(&K::try_from(tc.key.as_slice()).unwrap());
+        let xts_enc = XtsEncrypter::<A, _>::new(&K::try_from(tc.key.as_slice()).unwrap());
+        let xts_dec = XtsDecrypter::<A, _>::new(&K::try_from(tc.key.as_slice()).unwrap());
 
         match tc.test_type {
             TestType::Encrypt => {
                 buf.extend_from_slice(&tc.plaintext);
-                xts.encrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
-                assert_eq!(tc.ciphertext, buf, "count {}", tc.count);
+                xts_enc
+                    .encrypt_data_unit(tc.tweak.clone(), &mut buf)
+                    .unwrap();
 
                 // check decryption too just for fun
-                xts.decrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
+                xts_dec
+                    .decrypt_data_unit(tc.tweak.clone(), &mut buf)
+                    .unwrap();
                 assert_eq!(tc.plaintext, buf, "count {}", tc.count);
             }
             TestType::Decrypt => {
                 buf.extend_from_slice(&tc.ciphertext);
-                xts.decrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
+                xts_dec
+                    .decrypt_data_unit(tc.tweak.clone(), &mut buf)
+                    .unwrap();
                 assert_eq!(tc.plaintext, buf, "count {}", tc.count);
 
-                xts.encrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
+                xts_enc
+                    .encrypt_data_unit(tc.tweak.clone(), &mut buf)
+                    .unwrap();
                 assert_eq!(tc.ciphertext, buf, "count {}", tc.count);
             }
         }

@@ -53,23 +53,30 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   memcpy(&metadata_key_hmac.bytes, data + 32 + 2 + 31 + 1, 32);
 
   // create a cipher
-  NpLdtHandle handle = NpLdtCreate(key_seed, metadata_key_hmac);
-  if (handle == 0) {
-    printf("Error: create LDT\n");
+  NpLdtEncryptHandle enc_handle = NpLdtEncryptCreate(key_seed);
+  if (enc_handle.handle == 0) {
+    printf("Error: create LDT failed\n");
     __builtin_trap();
     return 0;
   }
 
   // encrypt with it
-  NP_LDT_RESULT result = NpLdtEncrypt(handle, payload, payload_len, salt);
+  NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, payload, payload_len, salt);
   if (result != 0) {
     printf("Error: encrypt\n");
     __builtin_trap();
     return 0;
   }
 
+  NpLdtDecryptHandle dec_handle = NpLdtDecryptCreate(key_seed, metadata_key_hmac);
+  if (dec_handle.handle == 0) {
+    printf("Error: create LDT failed\n");
+    __builtin_trap();
+    return 0;
+  }
+
   // decrypt & verify -- we expect mac mismatch since we're using a random mac
-  result = NpLdtDecryptAndVerify(handle, payload, payload_len, salt);
+  result = NpLdtDecryptAndVerify(dec_handle, payload, payload_len, salt);
   if (result != -2) {
     printf("Error: decryption didn't fail with the expected MAC mismatch\n");
     __builtin_trap();
@@ -77,9 +84,16 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   }
 
   // deallocate the cipher
-  result = NpLdtClose(handle);
+  result = NpLdtEncryptClose(enc_handle);
   if (result) {
     printf("Error: close cipher\n");
+    __builtin_trap();
+    return result;
+  }
+
+  result = NpLdtDecryptClose(dec_handle);
+  if (result) {
+    printf("Error: close cipher failed\n");
     __builtin_trap();
     return result;
   }

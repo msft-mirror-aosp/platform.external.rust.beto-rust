@@ -37,8 +37,7 @@ fn crypto_test_encrypt_decrypt<C: CryptoProvider>(
     let (ciphertext, iv) =
         encrypt::<_, C::AesCbcPkcs7Padded>(key, message, &mut rand::rngs::StdRng::from_entropy());
     let decrypt_result = decrypt::<C::AesCbcPkcs7Padded>(key, ciphertext.as_slice(), &iv);
-    assert!(decrypt_result.is_ok());
-    let ptext = decrypt_result.unwrap();
+    let ptext = decrypt_result.expect("Decrypt should be successful");
     assert_eq!(ptext, message.to_vec());
 }
 
@@ -146,7 +145,7 @@ where
 #[rstest]
 fn send_receive_message_seeded<C: CryptoProvider>(
     // TODO: Find a way to inject RNG / generated ephemeral secrets in openSSL and test them here
-    #[values(RustCryptoImpl::<MockRng>::new())] _crypto_provider: C,
+    #[values(RustCryptoImpl::< MockRng >::new())] _crypto_provider: C,
 ) {
     let rng = MockRng;
     let message = b"Hello World!";
@@ -179,8 +178,10 @@ fn send_receive_message<C: CryptoProvider>(
     let (mut init_conn_ctx, mut server_conn_ctx) = run_handshake::<C>();
     let encoded = init_conn_ctx.encode_message_to_peer::<C, &[u8]>(message, None);
     let decoded = server_conn_ctx.decode_message_from_peer::<C, &[u8]>(encoded.as_slice(), None);
-    assert!(decoded.is_ok());
-    assert_eq!(message.to_vec(), decoded.unwrap());
+    assert_eq!(
+        message.to_vec(),
+        decoded.expect("Decode should be successful")
+    );
 }
 
 #[rstest]
@@ -192,8 +193,10 @@ fn send_receive_message_associated_data<C: CryptoProvider>(
     let encoded = init_conn_ctx.encode_message_to_peer::<C, _>(message, Some(b"associated data"));
     let decoded = server_conn_ctx
         .decode_message_from_peer::<C, _>(encoded.as_slice(), Some(b"associated data"));
-    assert!(decoded.is_ok());
-    assert_eq!(message.to_vec(), decoded.unwrap());
+    assert_eq!(
+        message.to_vec(),
+        decoded.expect("Decode should be successful")
+    );
     // Make sure decode fails with missing associated data.
     let decoded = server_conn_ctx.decode_message_from_peer::<C, &[u8]>(encoded.as_slice(), None);
     assert!(decoded.is_err());
@@ -210,17 +213,20 @@ fn test_save_restore_session<C: CryptoProvider>(
     let (init_conn_ctx, server_conn_ctx) = run_handshake::<C>();
     let init_session = init_conn_ctx.save_session();
     let server_session = server_conn_ctx.save_session();
-    let mut init_restored_ctx = D2DConnectionContextV1::from_saved_session(init_session.as_slice())
-        .expect("failed to restore client session");
+    let mut init_restored_ctx =
+        D2DConnectionContextV1::from_saved_session::<C>(init_session.as_slice())
+            .expect("failed to restore client session");
     let mut server_restored_ctx =
-        D2DConnectionContextV1::from_saved_session(server_session.as_slice())
+        D2DConnectionContextV1::from_saved_session::<C>(server_session.as_slice())
             .expect("failed to restore server session");
     let message = b"Hello World!";
     let encoded = init_restored_ctx.encode_message_to_peer::<C, &[u8]>(message, None);
     let decoded =
         server_restored_ctx.decode_message_from_peer::<C, &[u8]>(encoded.as_slice(), None);
-    assert!(decoded.is_ok());
-    assert_eq!(message.to_vec(), decoded.unwrap());
+    assert_eq!(
+        message.to_vec(),
+        decoded.expect("Decode should be successful")
+    );
 }
 
 #[rstest]
@@ -230,9 +236,10 @@ fn test_save_restore_bad_session<C: CryptoProvider>(
     let (init_conn_ctx, server_conn_ctx) = run_handshake::<C>();
     let init_session = init_conn_ctx.save_session();
     let server_session = server_conn_ctx.save_session();
-    let _ = D2DConnectionContextV1::from_saved_session(init_session.as_slice())
+    let _ = D2DConnectionContextV1::from_saved_session::<C>(init_session.as_slice())
         .expect("failed to restore client session");
-    let server_restored_ctx = D2DConnectionContextV1::from_saved_session(&server_session[0..60]);
+    let server_restored_ctx =
+        D2DConnectionContextV1::from_saved_session::<C>(&server_session[0..60]);
     assert_eq!(
         server_restored_ctx.unwrap_err(),
         DeserializeError::BadDataLength
@@ -246,10 +253,10 @@ fn test_save_restore_bad_protocol_version<C: CryptoProvider>(
     let (init_conn_ctx, server_conn_ctx) = run_handshake::<C>();
     let init_session = init_conn_ctx.save_session();
     let mut server_session = server_conn_ctx.save_session();
-    let _ = D2DConnectionContextV1::from_saved_session(init_session.as_slice())
+    let _ = D2DConnectionContextV1::from_saved_session::<C>(init_session.as_slice())
         .expect("failed to restore client session");
     server_session[0] = 0; // Change the protocol version to an invalid one (0)
-    let server_restored_ctx = D2DConnectionContextV1::from_saved_session(&server_session);
+    let server_restored_ctx = D2DConnectionContextV1::from_saved_session::<C>(&server_session);
     assert_eq!(
         server_restored_ctx.unwrap_err(),
         DeserializeError::BadProtocolVersion
@@ -266,11 +273,13 @@ fn test_unique_session<C: CryptoProvider>(
     let message = b"Hello World!";
     let encoded = init_conn_ctx.encode_message_to_peer::<C, &[u8]>(message, None);
     let decoded = server_conn_ctx.decode_message_from_peer::<C, &[u8]>(encoded.as_slice(), None);
-    assert!(decoded.is_ok());
-    assert_eq!(message.to_vec(), decoded.unwrap());
+    assert_eq!(
+        message.to_vec(),
+        decoded.expect("Decode should be successful")
+    );
     let init_session_after = init_conn_ctx.get_session_unique::<C>();
     let server_session_after = server_conn_ctx.get_session_unique::<C>();
-    let bad_server_ctx = D2DConnectionContextV1::new(
+    let bad_server_ctx = D2DConnectionContextV1::new::<C>(
         server_conn_ctx.get_sequence_number_for_decoding(),
         server_conn_ctx.get_sequence_number_for_encoding(),
         Aes256Key::default(),
