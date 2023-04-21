@@ -14,51 +14,75 @@
 
 extern crate alloc;
 
+use crate::RcRng;
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 use crypto_provider::elliptic_curve::{EcdhProvider, EphemeralSecret, PublicKey};
 use crypto_provider::x25519::X25519;
+use rand::RngCore;
+use rand_core::{CryptoRng, SeedableRng};
 
 /// The RustCrypto implementation of X25519 ECDH.
-pub enum X25519Ecdh {}
-impl EcdhProvider<X25519> for X25519Ecdh {
+pub struct X25519Ecdh<R> {
+    _marker: PhantomData<R>,
+}
+
+impl<R: CryptoRng + RngCore + SeedableRng + Send> EcdhProvider<X25519> for X25519Ecdh<R> {
     type PublicKey = X25519PublicKey;
-    type EphemeralSecret = X25519EphemeralSecret;
+    type EphemeralSecret = X25519EphemeralSecret<R>;
     type SharedSecret = [u8; 32];
 }
 
 /// A X25519 ephemeral secret used for Diffie-Hellman.
-pub struct X25519EphemeralSecret(x25519_dalek::EphemeralSecret);
+pub struct X25519EphemeralSecret<R: CryptoRng + RngCore + SeedableRng> {
+    secret: x25519_dalek::EphemeralSecret,
+    marker: PhantomData<R>,
+}
 
-impl EphemeralSecret<X25519> for X25519EphemeralSecret {
-    type Impl = X25519Ecdh;
+impl<R: CryptoRng + RngCore + SeedableRng + Send> EphemeralSecret<X25519>
+    for X25519EphemeralSecret<R>
+{
+    type Impl = X25519Ecdh<R>;
     type Error = Error;
+    type Rng = RcRng<R>;
 
-    fn generate_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self {
-        Self(x25519_dalek::EphemeralSecret::new(rng))
+    fn generate_random(rng: &mut Self::Rng) -> Self {
+        Self {
+            secret: x25519_dalek::EphemeralSecret::random_from_rng(&mut rng.0),
+            marker: Default::default(),
+        }
     }
 
     fn public_key_bytes(&self) -> Vec<u8> {
-        let pubkey: x25519_dalek::PublicKey = (&self.0).into();
+        let pubkey: x25519_dalek::PublicKey = (&self.secret).into();
         pubkey.to_bytes().into()
     }
 
     fn diffie_hellman(
         self,
-        other_pub: &<X25519Ecdh as EcdhProvider<X25519>>::PublicKey,
-    ) -> Result<<X25519Ecdh as EcdhProvider<X25519>>::SharedSecret, Self::Error> {
-        Ok(x25519_dalek::EphemeralSecret::diffie_hellman(self.0, &other_pub.0).to_bytes())
+        other_pub: &<X25519Ecdh<R> as EcdhProvider<X25519>>::PublicKey,
+    ) -> Result<<X25519Ecdh<R> as EcdhProvider<X25519>>::SharedSecret, Self::Error> {
+        Ok(x25519_dalek::EphemeralSecret::diffie_hellman(self.secret, &other_pub.0).to_bytes())
     }
 }
 
 #[cfg(test)]
-impl crypto_provider::elliptic_curve::EphemeralSecretForTesting<X25519> for X25519EphemeralSecret {
+impl<R: CryptoRng + RngCore + SeedableRng + Send>
+    crypto_provider::elliptic_curve::EphemeralSecretForTesting<X25519>
+    for X25519EphemeralSecret<R>
+{
     fn from_private_components(
         private_bytes: &[u8; 32],
         _public_key: &X25519PublicKey,
     ) -> Result<Self, Self::Error> {
-        Ok(Self::generate_random(&mut crate::testing::MockCryptoRng {
-            values: private_bytes.iter(),
-        }))
+        Ok(Self {
+            secret: x25519_dalek::EphemeralSecret::random_from_rng(
+                &mut crate::testing::MockCryptoRng {
+                    values: private_bytes.iter(),
+                },
+            ),
+            marker: Default::default(),
+        })
     }
 }
 
@@ -91,9 +115,10 @@ mod tests {
     use super::X25519Ecdh;
     use core::marker::PhantomData;
     use crypto_provider::x25519::testing::*;
+    use rand::rngs::StdRng;
 
     #[apply(x25519_test_cases)]
-    fn x25519_tests(testcase: CryptoProviderTestCase<X25519Ecdh>) {
-        testcase(PhantomData::<X25519Ecdh>)
+    fn x25519_tests(testcase: CryptoProviderTestCase<X25519Ecdh<StdRng>>) {
+        testcase(PhantomData::<X25519Ecdh<StdRng>>)
     }
 }

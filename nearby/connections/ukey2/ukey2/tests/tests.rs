@@ -15,24 +15,20 @@
 use crypto_provider_rustcrypto::RustCrypto;
 use rand::{rngs::StdRng, SeedableRng};
 use std::collections::hash_set;
-use ukey2_rs::{error_handler::NoOpHandler, *};
+use ukey2_rs::*;
 
 #[test]
 fn full_integration_state_machine() {
     let mut next_protocols = hash_set::HashSet::new();
     let next_protocol = "AES_256_CBC-HMAC_SHA256".to_string();
     let _ = next_protocols.insert(next_protocol.clone());
-    let server1 = Ukey2ServerStage1::<RustCrypto, _>::from(
-        next_protocols,
-        HandshakeImplementation::Spec,
-        NoOpHandler::default(),
-    );
+    let server1 =
+        Ukey2ServerStage1::<RustCrypto>::from(next_protocols, HandshakeImplementation::Spec);
     let mut rng = StdRng::from_entropy();
-    let client1 = Ukey2ClientStage1::<RustCrypto, _>::from(
+    let client1 = Ukey2ClientStage1::<RustCrypto>::from(
         &mut rng,
         next_protocol,
         HandshakeImplementation::Spec,
-        NoOpHandler::default(),
     );
     let server2 = server1
         .advance_state(&mut rng, client1.client_init_msg())
@@ -69,21 +65,19 @@ fn full_integration_state_machine() {
 }
 
 #[test]
-fn full_integration_state_machine_weird() {
+fn full_integration_state_machine_public_key_in_protobuf() {
     let mut next_protocols = hash_set::HashSet::new();
     let next_protocol = "AES_256_CBC-HMAC_SHA256".to_string();
     let _ = next_protocols.insert(next_protocol.clone());
-    let server1 = Ukey2ServerStage1::<RustCrypto, _>::from(
+    let server1 = Ukey2ServerStage1::<RustCrypto>::from(
         next_protocols,
-        HandshakeImplementation::Weird,
-        NoOpHandler::default(),
+        HandshakeImplementation::PublicKeyInProtobuf,
     );
     let mut rng = StdRng::from_entropy();
-    let client1 = Ukey2ClientStage1::<RustCrypto, _>::from(
+    let client1 = Ukey2ClientStage1::<RustCrypto>::from(
         &mut rng,
         next_protocol,
-        HandshakeImplementation::Weird,
-        NoOpHandler::default(),
+        HandshakeImplementation::PublicKeyInProtobuf,
     );
     let server2 = server1
         .advance_state(&mut rng, client1.client_init_msg())

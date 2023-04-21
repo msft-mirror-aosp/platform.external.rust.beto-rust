@@ -1,6 +1,6 @@
 # Better Together Core
 
-Core rust components to google better together experiences. This is not an officially supported Google product.
+Core rust components to google better together experiences.
 
 ## Projects 
 

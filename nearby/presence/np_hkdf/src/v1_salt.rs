@@ -37,22 +37,13 @@ impl<C: CryptoProvider> V1Salt<C> {
     ///
     /// Returns none if the requested size is larger than HKDF allows or if offset arithmetic
     /// overflows.
-    pub fn derive<const N: usize>(
-        &self,
-        section: Option<SectionOffset>,
-        de: Option<DataElementOffset>,
-    ) -> Option<[u8; N]> {
+    pub fn derive<const N: usize>(&self, de: Option<DataElementOffset>) -> Option<[u8; N]> {
         let mut arr = [0_u8; N];
         // 0-based offsets -> 1-based indices w/ 0 indicating not present
         self.hkdf
             .expand_multi_info(
                 &[
                     b"V1 derived salt",
-                    &section
-                        .and_then(|s| s.offset.checked_add(1))
-                        .and_then(|o| o.try_into().ok())
-                        .unwrap_or(0_u32)
-                        .to_be_bytes(),
                     &de.and_then(|d| d.offset.checked_add(1))
                         .and_then(|o| o.try_into().ok())
                         .unwrap_or(0_u32)
@@ -67,6 +58,11 @@ impl<C: CryptoProvider> V1Salt<C> {
     /// Returns the salt bytes as a slice
     pub fn as_slice(&self) -> &[u8] {
         self.data.as_slice()
+    }
+
+    /// Returns the salt bytes as a reference to an array
+    pub fn as_array_ref(&self) -> &[u8; 16] {
+        &self.data
     }
 }
 
@@ -91,35 +87,6 @@ impl<C: CryptoProvider> Eq for V1Salt<C> {}
 impl<C: CryptoProvider> fmt::Debug for V1Salt<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.data.fmt(f)
-    }
-}
-
-/// Offset of a section in an advertisement, used with [V1Salt].
-#[derive(PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
-pub struct SectionOffset {
-    /// 0-based offset of the section in the advertisement
-    offset: usize,
-}
-
-impl SectionOffset {
-    /// Returns the offset as a usize
-    pub fn as_usize(&self) -> usize {
-        self.offset
-    }
-
-    /// Returns the next offset.
-    ///
-    /// Does not handle overflow as there can't be more than 2^8 sections in a advertisement.
-    pub const fn incremented(&self) -> Self {
-        Self {
-            offset: self.offset + 1,
-        }
-    }
-}
-
-impl From<usize> for SectionOffset {
-    fn from(num: usize) -> Self {
-        Self { offset: num }
     }
 }
 

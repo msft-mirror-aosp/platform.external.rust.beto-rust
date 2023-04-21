@@ -22,7 +22,6 @@ use ukey2_connections::{
     D2DConnectionContextV1, D2DHandshakeContext, InitiatorD2DHandshakeContext,
     ServerD2DHandshakeContext,
 };
-use ukey2_rs::error_handler::NoOpHandler;
 use ukey2_rs::HandshakeImplementation;
 
 const MODE_INITIATOR: &str = "initiator";
@@ -144,8 +143,7 @@ impl Ukey2Shell {
 
     fn run_as_initiator(&self) -> bool {
         let mut initiator_ctx = InitiatorD2DHandshakeContext::<RustCrypto, _>::new(
-            HandshakeImplementation::Weird,
-            NoOpHandler::default(),
+            HandshakeImplementation::PublicKeyInProtobuf,
         );
         write_frame(initiator_ctx.get_next_handshake_message().unwrap());
         let server_init_msg = read_frame();
@@ -179,8 +177,7 @@ impl Ukey2Shell {
 
     fn run_as_responder(&self) -> bool {
         let mut server_ctx = ServerD2DHandshakeContext::<RustCrypto, _>::new(
-            HandshakeImplementation::Weird,
-            NoOpHandler::default(),
+            HandshakeImplementation::PublicKeyInProtobuf,
         );
         let initiator_init_msg = read_frame();
         server_ctx

@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crypto_provider::CryptoProvider;
 use crypto_provider_rustcrypto::RustCrypto;
+use ldt_tbc::{TweakableBlockCipherDecrypter, TweakableBlockCipherEncrypter};
 use libfuzzer_sys::fuzz_target;
 use xts_aes::*;
 
@@ -24,16 +24,23 @@ fuzz_target!(|data: XtsFuzzInput| {
         return;
     }
 
-    let xts = build_xts_aes::<_, <RustCrypto as CryptoProvider>::Aes128>(
-        &XtsAes128Key::from(&data.key),
-    );
+    let xts_enc =
+        <XtsAes128<RustCrypto> as ldt_tbc::TweakableBlockCipher<16>>::EncryptionCipher::new(
+            &XtsAes128Key::from(&data.key),
+        );
+    let xts_dec =
+        <XtsAes128<RustCrypto> as ldt_tbc::TweakableBlockCipher<16>>::DecryptionCipher::new(
+            &XtsAes128Key::from(&data.key),
+        );
+
     let tweak: Tweak = data.tweak.into();
 
     let mut buffer = data.plaintext.clone();
 
-    xts.encrypt_data_unit(tweak.clone(), &mut buffer[..])
+    xts_enc
+        .encrypt_data_unit(tweak.clone(), &mut buffer[..])
         .unwrap();
-    xts.decrypt_data_unit(tweak, &mut buffer[..]).unwrap();
+    xts_dec.decrypt_data_unit(tweak, &mut buffer[..]).unwrap();
     assert_eq!(data.plaintext, buffer);
 });
 

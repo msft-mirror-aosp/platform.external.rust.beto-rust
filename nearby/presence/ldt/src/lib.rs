@@ -17,7 +17,6 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![deny(
-    missing_docs,
     clippy::indexing_slicing,
     clippy::unwrap_used,
     clippy::panic,
@@ -25,25 +24,29 @@
 )]
 
 use core::{fmt, marker::PhantomData};
+use crypto_provider::CryptoProvider;
 use ldt_tbc::{ConcatenatedKeyArray, TweakableBlockCipher, TweakableBlockCipherKey};
+use ldt_tbc::{TweakableBlockCipherDecrypter, TweakableBlockCipherEncrypter};
 
-/// Implementation of the [LDT](https://eprint.iacr.org/2017/841.pdf) length doubler.
+/// Implementation of the [LDT](https://eprint.iacr.org/2017/841.pdf) length doubler encryption cipher.
 ///
 /// `B` is the block size.
+/// `T` is the provided implementation of a Tweakable Block Cipher
+/// `M` is the implementation of a [pure mix function](https://eprint.iacr.org/2017/841.pdf)
 #[repr(C)]
-pub struct Ldt<const B: usize, T: TweakableBlockCipher<B>, M: Mix> {
-    cipher_1: T,
-    cipher_2: T,
+pub struct LdtEncryptCipher<const B: usize, T: TweakableBlockCipher<B>, M: Mix> {
+    cipher_1: T::EncryptionCipher,
+    cipher_2: T::EncryptionCipher,
     // marker to use `M`
     mix_phantom: PhantomData<M>,
 }
 
-impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> Ldt<B, T, M> {
-    /// Create an [Ldt] with the provided Tweakable block cipher and Mix function
+impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtEncryptCipher<B, T, M> {
+    /// Create an [LdtEncryptCipher] with the provided Tweakable block cipher and Mix function
     pub fn new(key: &LdtKey<T::Key>) -> Self {
-        Ldt {
-            cipher_1: T::new(&key.key_1),
-            cipher_2: T::new(&key.key_2),
+        LdtEncryptCipher {
+            cipher_1: T::EncryptionCipher::new(&key.key_1),
+            cipher_2: T::EncryptionCipher::new(&key.key_2),
             mix_phantom: PhantomData::default(),
         }
     }
@@ -55,7 +58,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> Ldt<B, T, M> {
     /// # Errors
     /// - if `data` has a length outside of `[B, B * 2)`.
     pub fn encrypt<P: Padder<B, T>>(&self, data: &mut [u8], padder: &P) -> Result<(), LdtError> {
-        self.do_ldt(
+        do_ldt::<B, T, M, _, _, _, P>(
             data,
             |cipher, tweak, block| cipher.encrypt(tweak, block),
             padder,
@@ -63,6 +66,30 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> Ldt<B, T, M> {
             &self.cipher_1,
             &self.cipher_2,
         )
+    }
+}
+
+/// Implementation of the [LDT](https://eprint.iacr.org/2017/841.pdf) length doubler decryption cipher.
+///
+/// `B` is the block size.
+/// `T` is the provided implementation of a Tweakable Block Cipher
+/// `M` is the implementation of a [pure mix function](https://eprint.iacr.org/2017/841.pdf)
+#[repr(C)]
+pub struct LdtDecryptCipher<const B: usize, T: TweakableBlockCipher<B>, M: Mix> {
+    cipher_1: T::DecryptionCipher,
+    cipher_2: T::DecryptionCipher,
+    // marker to use `M`
+    mix_phantom: PhantomData<M>,
+}
+
+impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtDecryptCipher<B, T, M> {
+    /// Create an [LdtDecryptCipher] with the provided Tweakable block cipher and Mix function
+    pub fn new(key: &LdtKey<T::Key>) -> Self {
+        LdtDecryptCipher {
+            cipher_1: T::DecryptionCipher::new(&key.key_1),
+            cipher_2: T::DecryptionCipher::new(&key.key_2),
+            mix_phantom: PhantomData::default(),
+        }
     }
 
     /// Decrypt `data` in place, performing the pad operation with `padder`.
@@ -72,7 +99,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> Ldt<B, T, M> {
     /// # Errors
     /// - if `data` has a length outside of `[B, B * 2)`.
     pub fn decrypt<P: Padder<B, T>>(&self, data: &mut [u8], padder: &P) -> Result<(), LdtError> {
-        self.do_ldt(
+        do_ldt::<B, T, M, _, _, _, P>(
             data,
             |cipher, tweak, block| cipher.decrypt(tweak, block),
             padder,
@@ -82,63 +109,66 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> Ldt<B, T, M> {
             &self.cipher_1,
         )
     }
+}
 
-    fn do_ldt<C, X, P>(
-        &self,
-        data: &mut [u8],
-        cipher_op: C,
-        padder: &P,
-        mix: X,
-        first_cipher: &T,
-        second_cipher: &T,
-    ) -> Result<(), LdtError>
-    where
-        // Encrypt or decrypt in place with a tweak
-        C: Fn(&T, T::Tweak, &mut [u8; B]),
-        // Mix a/b into block-sized chunks
-        X: Fn(&[u8], &[u8]) -> ([u8; B], [u8; B]),
-        P: Padder<B, T>,
-    {
-        if data.len() < B || data.len() >= B * 2 {
-            return Err(LdtError::InvalidLength(data.len()));
-        }
-        let s = data.len() - B;
-        debug_assert!(s < B);
-
-        // m1 length B, m2 length s (s < B)
-        let (m1, m2) = data.split_at(B);
-        debug_assert_eq!(s, m2.len());
-        let m1_ciphertext = {
-            let mut m1_plaintext = [0_u8; B];
-            // m1 is of length B, so no panic
-            m1_plaintext[..].copy_from_slice(m1);
-            let tweak = padder.pad_tweak(m2);
-            cipher_op(first_cipher, tweak, &mut m1_plaintext);
-            m1_plaintext
-        };
-        // |z| = B - s, |m3| = s
-        let (z, m3) = m1_ciphertext.split_at(B - s);
-        debug_assert_eq!(s, m3.len());
-        // c3 and c2 are the last s bytes of their size-B arrays, respectively
-        let (mut c3, c2) = mix(m3, m2);
-        let c1 = {
-            // constructing z || c3 is easy since c3 is already the last s bytes
-            c3[0..(B - s)].copy_from_slice(z);
-            let mut z_c3 = c3;
-            let tweak = padder.pad_tweak(&c2[B - s..]);
-            cipher_op(second_cipher, tweak, &mut z_c3);
-            z_c3
-        };
-        let len = data.len();
-        data.get_mut(0..B)
-            .ok_or(LdtError::InvalidLength(len))?
-            .copy_from_slice(&c1);
-        data.get_mut(B..)
-            .ok_or(LdtError::InvalidLength(len))?
-            .copy_from_slice(&c2[B - s..]);
-
-        Ok(())
+// internal implementation of ldt cipher operations, re-used by encryption and decryption, by providing
+// the corresponding cipher_op and mix operation
+fn do_ldt<const B: usize, T, M, O, C, X, P>(
+    data: &mut [u8],
+    cipher_op: O,
+    padder: &P,
+    mix: X,
+    first_cipher: &C,
+    second_cipher: &C,
+) -> Result<(), LdtError>
+where
+    T: TweakableBlockCipher<B>,
+    M: Mix,
+    // Encrypt or decrypt in place with a tweak
+    O: Fn(&C, T::Tweak, &mut [u8; B]),
+    // Mix a/b into block-sized chunks
+    X: Fn(&[u8], &[u8]) -> ([u8; B], [u8; B]),
+    P: Padder<B, T>,
+{
+    if data.len() < B || data.len() >= B * 2 {
+        return Err(LdtError::InvalidLength(data.len()));
     }
+    let s = data.len() - B;
+    debug_assert!(s < B);
+
+    // m1 length B, m2 length s (s < B)
+    let (m1, m2) = data.split_at(B);
+    debug_assert_eq!(s, m2.len());
+    let m1_ciphertext = {
+        let mut m1_plaintext = [0_u8; B];
+        // m1 is of length B, so no panic
+        m1_plaintext[..].copy_from_slice(m1);
+        let tweak = padder.pad_tweak(m2);
+        cipher_op(first_cipher, tweak, &mut m1_plaintext);
+        m1_plaintext
+    };
+    // |z| = B - s, |m3| = s
+    let (z, m3) = m1_ciphertext.split_at(B - s);
+    debug_assert_eq!(s, m3.len());
+    // c3 and c2 are the last s bytes of their size-B arrays, respectively
+    let (mut c3, c2) = mix(m3, m2);
+    let c1 = {
+        // constructing z || c3 is easy since c3 is already the last s bytes
+        c3[0..(B - s)].copy_from_slice(z);
+        let mut z_c3 = c3;
+        let tweak = padder.pad_tweak(&c2[B - s..]);
+        cipher_op(second_cipher, tweak, &mut z_c3);
+        z_c3
+    };
+    let len = data.len();
+    data.get_mut(0..B)
+        .ok_or(LdtError::InvalidLength(len))?
+        .copy_from_slice(&c1);
+    data.get_mut(B..)
+        .ok_or(LdtError::InvalidLength(len))?
+        .copy_from_slice(&c2[B - s..]);
+
+    Ok(())
 }
 
 /// Errors produced by LDT encryption/decryption.
@@ -181,8 +211,8 @@ impl<T: TweakableBlockCipherKey> LdtKey<T> {
     }
 
     /// Build a random key from a secure RNG.
-    pub fn from_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self {
-        Self::from_concatenated(&ConcatenatedKeyArray::from_random(rng))
+    pub fn from_random<C: CryptoProvider>(rng: &mut C::CryptoRng) -> Self {
+        Self::from_concatenated(&ConcatenatedKeyArray::from_random::<C>(rng))
     }
 
     /// Returns the key material as a concatenated array with the contents of the two tweakable
