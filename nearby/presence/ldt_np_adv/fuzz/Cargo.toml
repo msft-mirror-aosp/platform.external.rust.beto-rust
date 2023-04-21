@@ -18,6 +18,10 @@ path = ".."
 
 [dependencies.np_hkdf]
 path = "../../np_hkdf"
+[dependencies.xts_aes]
+path = "../../xts_aes"
+[dependencies.ldt]
+path = "../../ldt"
 
 # Prevent this from interfering with workspaces
 [workspace]
