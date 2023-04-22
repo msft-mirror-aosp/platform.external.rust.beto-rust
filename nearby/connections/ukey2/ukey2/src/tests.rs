@@ -52,12 +52,13 @@ fn advance_from_init_to_finish_client_test<C: CryptoProvider>(
         <C::X25519 as EcdhProvider<X25519>>::PublicKey::from_bytes(&secret.public_key_bytes())
             .unwrap();
     let random: [u8; 32] = rng.gen();
-
-    let mut message_data: ukey::Ukey2ServerInit = ukey::Ukey2ServerInit::default();
-    message_data.set_version(1);
-    message_data.set_random(random.to_vec());
-    message_data.set_handshake_cipher(ukey::Ukey2HandshakeCipher::CURVE25519_SHA512);
-    message_data.set_public_key(public_key.to_bytes().to_vec());
+    let message_data: ukey::Ukey2ServerInit = ukey::Ukey2ServerInit {
+        version: Some(1),
+        random: Some(random.to_vec()),
+        handshake_cipher: Some(ukey::Ukey2HandshakeCipher::CURVE25519_SHA512.into()),
+        public_key: Some(public_key.to_bytes()),
+        ..Default::default()
+    };
 
     let _client = client1
         .advance_state(
@@ -96,14 +97,18 @@ fn advance_from_init_to_complete_server_x25519_test<C: CryptoProvider>(
     let cipher = HandshakeCipher::Curve25519Sha512;
     let client_random = rng.gen::<[u8; 32]>();
     let client_init_framed = {
-        let mut commitment = ukey::Ukey2ClientInit_CipherCommitment::default();
-        commitment.set_handshake_cipher(cipher.as_proto());
-        commitment.set_commitment(client_finished_hash);
-        let mut client_init = ukey::Ukey2ClientInit::default();
-        client_init.set_version(1);
-        client_init.set_random(client_random.to_vec());
-        client_init.set_cipher_commitments(vec![commitment].into());
-        client_init.set_next_protocol("AES_256_CBC-HMAC_SHA256".to_string());
+        let commitment = ukey::ukey2client_init::CipherCommitment {
+            handshake_cipher: Some(cipher.as_proto().into()),
+            commitment: Some(client_finished_hash),
+            ..Default::default()
+        };
+        let client_init = ukey::Ukey2ClientInit {
+            version: Some(1),
+            random: Some(client_random.to_vec()),
+            cipher_commitments: vec![commitment],
+            next_protocol: Some("AES_256_CBC-HMAC_SHA256".to_string()),
+            ..Default::default()
+        };
         client_init.to_wrapped_msg()
     };
     let server2 = server1
@@ -149,15 +154,19 @@ fn advance_from_init_to_complete_server_p256_test<C: CryptoProvider>(
     let client_finished_hash = hasher.finalize().to_vec();
     let cipher = HandshakeCipher::P256Sha512;
     let client_init_framed = {
-        let mut commitment = ukey::Ukey2ClientInit_CipherCommitment::default();
-        commitment.set_handshake_cipher(cipher.as_proto());
-        commitment.set_commitment(client_finished_hash);
-        let mut client_init = ukey::Ukey2ClientInit::default();
-        client_init.set_version(1);
-        client_init.set_random(rng.gen::<[u8; 32]>().to_vec());
-        client_init.set_cipher_commitments(vec![commitment].into());
-        client_init.set_next_protocol("AES_256_CBC-HMAC_SHA256".to_string());
-        client_init.to_wrapped_msg()
+        let commitment = ukey::ukey2client_init::CipherCommitment {
+            handshake_cipher: Some(cipher.as_proto().into()),
+            commitment: Some(client_finished_hash),
+            ..Default::default()
+        };
+        ukey::Ukey2ClientInit {
+            version: Some(1),
+            random: Some(rng.gen::<[u8; 32]>().to_vec()),
+            cipher_commitments: vec![commitment],
+            next_protocol: Some("AES_256_CBC-HMAC_SHA256".to_string()),
+            ..Default::default()
+        }
+        .to_wrapped_msg()
     };
     let server2 = server1
         .advance_state(&mut rng, &client_init_framed.write_to_bytes().unwrap())
@@ -171,10 +180,10 @@ fn advance_from_init_to_complete_server_p256_test<C: CryptoProvider>(
 
 #[test]
 fn message_type_discriminant() {
-    assert_eq!(1, ukey::Ukey2Message_Type::ALERT as i32);
-    assert_eq!(2, ukey::Ukey2Message_Type::CLIENT_INIT as i32);
-    assert_eq!(3, ukey::Ukey2Message_Type::SERVER_INIT as i32);
-    assert_eq!(4, ukey::Ukey2Message_Type::CLIENT_FINISH as i32);
+    assert_eq!(1, ukey::ukey2message::Type::ALERT as i32);
+    assert_eq!(2, ukey::ukey2message::Type::CLIENT_INIT as i32);
+    assert_eq!(3, ukey::ukey2message::Type::SERVER_INIT as i32);
+    assert_eq!(4, ukey::ukey2message::Type::CLIENT_FINISH as i32);
 }
 
 #[test]
@@ -185,9 +194,24 @@ fn cipher_type_discriminant() {
 
 #[test]
 fn convert_to_message_type() {
-    assert_eq!(MessageType::ClientInit, 2.into_adapter().unwrap());
-    assert_eq!(MessageType::ServerInit, 3.into_adapter().unwrap());
-    assert_eq!(MessageType::ClientFinish, 4.into_adapter().unwrap());
+    assert_eq!(
+        MessageType::ClientInit,
+        ukey::ukey2message::Type::CLIENT_INIT
+            .into_adapter()
+            .unwrap()
+    );
+    assert_eq!(
+        MessageType::ServerInit,
+        ukey::ukey2message::Type::SERVER_INIT
+            .into_adapter()
+            .unwrap()
+    );
+    assert_eq!(
+        MessageType::ClientFinish,
+        ukey::ukey2message::Type::CLIENT_FINISH
+            .into_adapter()
+            .unwrap()
+    );
 }
 
 #[test]

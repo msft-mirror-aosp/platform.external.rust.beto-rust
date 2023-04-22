@@ -87,6 +87,8 @@ message Ukey2ClientInit {
 
   // Next protocol that the client wants to speak.
   optional string next_protocol = 4;
+  // Other next protocols the client can speak.
+  repeated string other_next_protocols = 5;
 }
 
 message Ukey2ServerInit {
@@ -97,6 +99,9 @@ message Ukey2ServerInit {
   // Selected Cipher and corresponding public key
   optional Ukey2HandshakeCipher handshake_cipher = 3;
   optional bytes public_key = 4;
+  // The server-selected next_protocol string based on the Ukey2ClientInit's
+  // next_protocol string and other_next_protocols array.
+  optional string selected_next_protocol = 5;
 }
 
 message Ukey2ClientFinished {

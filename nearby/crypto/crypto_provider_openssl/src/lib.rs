@@ -99,6 +99,10 @@ impl CryptoRng for OpenSslRng {
         rand_bytes(&mut buf).unwrap();
         u64::from_be_bytes(buf)
     }
+
+    fn fill(&mut self, dest: &mut [u8]) {
+        rand_bytes(dest).expect("Error in generating random bytes")
+    }
 }
 
 #[cfg(test)]

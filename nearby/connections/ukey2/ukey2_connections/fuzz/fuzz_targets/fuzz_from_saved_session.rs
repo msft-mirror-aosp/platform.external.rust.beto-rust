@@ -13,21 +13,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 use libfuzzer_sys::fuzz_target;
-use ukey2_connections::{
-    DeserializeError, D2DConnectionContextV1
-};
+use ukey2_connections::{D2DConnectionContextV1, DeserializeError};
+use crypto_provider_rustcrypto::RustCrypto;
 
 const PROTOCOL_VERSION: u8 = 1;
 
 fuzz_target!(|input: [u8; 73]| {
-    let result = D2DConnectionContextV1::from_saved_session(&input);
+    let result = D2DConnectionContextV1::from_saved_session::<RustCrypto>(&input);
     if input[0] != PROTOCOL_VERSION {
-        assert_eq!(
-            result.unwrap_err(),
-            DeserializeError::BadProtocolVersion
-        );
+        assert_eq!(result.unwrap_err(), DeserializeError::BadProtocolVersion);
     } else {
         assert!(result.is_ok());
     }

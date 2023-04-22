@@ -48,7 +48,7 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send> EphemeralSecret<X25519>
 
     fn generate_random(rng: &mut Self::Rng) -> Self {
         Self {
-            secret: x25519_dalek::EphemeralSecret::new(&mut rng.0),
+            secret: x25519_dalek::EphemeralSecret::random_from_rng(&mut rng.0),
             marker: Default::default(),
         }
     }
@@ -76,9 +76,11 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send>
         _public_key: &X25519PublicKey,
     ) -> Result<Self, Self::Error> {
         Ok(Self {
-            secret: x25519_dalek::EphemeralSecret::new(&mut crate::testing::MockCryptoRng {
-                values: private_bytes.iter(),
-            }),
+            secret: x25519_dalek::EphemeralSecret::random_from_rng(
+                &mut crate::testing::MockCryptoRng {
+                    values: private_bytes.iter(),
+                },
+            ),
             marker: Default::default(),
         })
     }

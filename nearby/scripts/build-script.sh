@@ -21,17 +21,20 @@ export SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null &&
 
 # Use to generate headers for new source code files
 gen_headers() {
+  set -e
   $HOME/go/bin/addlicense -c "Google LLC" -l apache -ignore=**/android/build/** -ignore=target/** -ignore=**/target/** -ignore=".idea/*" -ignore=**/cmake-build/** -ignore="**/java/build/**" .
 }
 
 # Checks the workspace 3rd party crates and makes sure they have a valid license
 check_crate_licenses(){
+    set -e
     cd $SCRIPT_DIR/..
     cargo deny --workspace check
 }
 
 # Checks everything in beto-rust
 check_everything(){
+  set -e
   cd $SCRIPT_DIR/..
   check_license_headers
   check_workspace
@@ -42,6 +45,7 @@ check_everything(){
 
 # Checks everything included in the top level workspace
 check_workspace(){
+  set -e
   cd $SCRIPT_DIR/..
   # ensure formatting is correct (Check for it first because it is fast compared to running tests)
   cargo fmt --check
@@ -59,6 +63,7 @@ check_workspace(){
 
 # Checks that the license auditing tool is installed and that all source files in the project contain the needed headers
 check_license_headers() {
+  set -e
   cd $SCRIPT_DIR/..
   # install location for those following the default instructions
   ADDLICENSE="$HOME/go/bin/addlicense"
@@ -93,6 +98,7 @@ check_license_headers() {
 
 # Build all fuzz targets
 build_fuzzers() {
+  set -e
   cd $SCRIPT_DIR/..
   # rust fuzzers
   for fuzzed_crate in presence/xts_aes presence/ldt presence/ldt_np_adv connections/ukey2/ukey2_connections; do
@@ -107,6 +113,7 @@ build_fuzzers() {
 
 # Builds and runs all tests for all combinations of features for the LDT FFI
 check_ldt_ffi() {
+  set -e
   cd $SCRIPT_DIR/..
   # We need to handle ldt_np_adv_ffi separately since it requires the nightly toolchain
   cd presence/ldt_np_adv_ffi
@@ -166,6 +173,7 @@ check_ldt_ffi() {
 # Clones boringssl and uses bindgen to generate the rust crate, applies AOSP
 # specific patches to the 3p `openssl` crate so that it can use a bssl backend
 prepare_boringssl() {
+  set -e
   cd $SCRIPT_DIR/../..
   projectroot=$PWD
   mkdir -p boringssl-build && cd boringssl-build
@@ -174,7 +182,8 @@ prepare_boringssl() {
     git clone https://boringssl.googlesource.com/boringssl
   fi
   cd boringssl && mkdir -p build && cd build
-  cmake -G Ninja .. -DRUST_BINDINGS="$(gcc -dumpmachine)" && ninja
+  target=$(rustc -vV | awk '/host/ { print $2 }')
+  cmake -G Ninja .. -DRUST_BINDINGS="$target" && ninja
   # A valid Rust crate is built under `boringssl-build/boringssl/build/rust/bssl-sys`
 
   cd $projectroot/boringssl-build
@@ -203,6 +212,7 @@ EOF
 # crypto_provider_boringssl is used on Chromium
 # And we want to verify that both of these are tested in our own repo
 check_boringssl() {
+  set -e
   cd $SCRIPT_DIR/../..
   # clones boringssl and uses bindgen to generate the sys bindings
   prepare_boringssl
@@ -222,6 +232,7 @@ check_boringssl() {
 
 # Helper for setting up dependencies on the build machine
 setup_kokoro_macos () {
+  set -e
   go install github.com/google/addlicense@latest
   curl https://sh.rustup.rs -sSf | sh -s -- -y --no-modify-path --default-toolchain 1.68.0
   cargo install --locked cargo-deny --color never 2>&1

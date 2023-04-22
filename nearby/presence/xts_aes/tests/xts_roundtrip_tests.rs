@@ -13,11 +13,15 @@
 // limitations under the License.
 
 use aes::{cipher, cipher::KeyInit as _};
-use crypto_provider::{aes::*, CryptoProvider};
-use crypto_provider_rustcrypto::RustCrypto;
+use alloc::vec::Vec;
+use crypto_provider::aes::*;
+use crypto_provider_rustcrypto::aes::{Aes128, Aes256};
+use ldt_tbc::TweakableBlockCipherDecrypter;
+use ldt_tbc::TweakableBlockCipherEncrypter;
 use rand::{self, distributions, Rng as _};
 use rand_ext::seeded_rng;
-use xts_aes::*;
+use xts_aes::{Tweak, XtsAes128Key, XtsAes256Key, XtsDecrypter, XtsEncrypter, XtsKey};
+extern crate alloc;
 
 #[test]
 fn roundtrip_self() {
@@ -27,37 +31,40 @@ fn roundtrip_self() {
             let mut key = [0_u8; 32];
             rng.fill(&mut key);
             do_roundtrip(
-                build_xts_aes::<_, <RustCrypto as CryptoProvider>::Aes128>(&XtsAes128Key::from(
-                    &key,
-                )),
+                XtsEncrypter::<Aes128, _>::new(&XtsAes128Key::from(&key)),
+                XtsDecrypter::<Aes128, _>::new(&XtsAes128Key::from(&key)),
                 &mut rng,
             )
         } else {
             let mut key = [0_u8; 64];
             rng.fill(&mut key);
             do_roundtrip(
-                build_xts_aes::<_, <RustCrypto as CryptoProvider>::Aes256>(&XtsAes256Key::from(
-                    &key,
-                )),
+                XtsEncrypter::<Aes256, _>::new(&XtsAes256Key::from(&key)),
+                XtsDecrypter::<Aes256, _>::new(&XtsAes256Key::from(&key)),
                 &mut rng,
             )
         };
     }
 
-    fn do_roundtrip<A: Aes, R: rand::Rng>(xts: Xts<A>, rng: &mut R) {
+    fn do_roundtrip<A: Aes<Key = K::BlockCipherKey>, K: XtsKey, R: rand::Rng>(
+        xts_enc: XtsEncrypter<A, K>,
+        xts_dec: XtsDecrypter<A, K>,
+        rng: &mut R,
+    ) {
         let plaintext_len_range = distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 4);
         let mut plaintext = Vec::<u8>::new();
         plaintext.extend((0..rng.sample(plaintext_len_range)).map(|_| rng.gen::<u8>()));
 
         let mut ciphertext = plaintext.clone();
         let tweak: Tweak = rng.gen::<u128>().into();
-        xts.encrypt_data_unit(tweak.clone(), &mut ciphertext)
+        xts_enc
+            .encrypt_data_unit(tweak.clone(), &mut ciphertext)
             .unwrap();
 
         assert_eq!(plaintext.len(), ciphertext.len());
         assert_ne!(plaintext, ciphertext);
 
-        xts.decrypt_data_unit(tweak, &mut ciphertext).unwrap();
+        xts_dec.decrypt_data_unit(tweak, &mut ciphertext).unwrap();
         assert_eq!(plaintext, ciphertext);
     }
 }
@@ -74,9 +81,8 @@ fn identical_to_xtsmode_crate() {
         if rng.gen() {
             let mut key = [0; 32];
             rng.fill(&mut key);
-            let xts = build_xts_aes::<_, <RustCrypto as CryptoProvider>::Aes128>(
-                &XtsAes128Key::from(&key),
-            );
+            let xts_enc = XtsEncrypter::<Aes128, _>::new(&XtsAes128Key::from(&key));
+            let xts_dec = XtsDecrypter::<Aes128, _>::new(&XtsAes128Key::from(&key));
 
             let primary_cipher =
                 aes::Aes128::new(cipher::generic_array::GenericArray::from_slice(&key[0..16]));
@@ -84,13 +90,12 @@ fn identical_to_xtsmode_crate() {
                 aes::Aes128::new(cipher::generic_array::GenericArray::from_slice(&key[16..]));
             let other_xts = xts_mode::Xts128::new(primary_cipher, tweak_cipher);
 
-            do_roundtrip(xts, other_xts, &mut rng)
+            do_roundtrip(xts_enc, xts_dec, other_xts, &mut rng)
         } else {
             let mut key = [0; 64];
             rng.fill(&mut key);
-            let xts = build_xts_aes::<_, <RustCrypto as CryptoProvider>::Aes256>(
-                &XtsAes256Key::from(&key),
-            );
+            let xts_enc = XtsEncrypter::<Aes256, _>::new(&XtsAes256Key::from(&key));
+            let xts_dec = XtsDecrypter::<Aes256, _>::new(&XtsAes256Key::from(&key));
 
             let primary_cipher =
                 aes::Aes256::new(cipher::generic_array::GenericArray::from_slice(&key[0..32]));
@@ -98,16 +103,18 @@ fn identical_to_xtsmode_crate() {
                 aes::Aes256::new(cipher::generic_array::GenericArray::from_slice(&key[32..]));
             let other_xts = xts_mode::Xts128::new(primary_cipher, tweak_cipher);
 
-            do_roundtrip(xts, other_xts, &mut rng)
+            do_roundtrip(xts_enc, xts_dec, other_xts, &mut rng)
         };
     }
 
     fn do_roundtrip<
-        A: Aes,
+        A: Aes<Key = K::BlockCipherKey>,
+        K: XtsKey,
         C: cipher::BlockEncrypt + cipher::BlockDecrypt + cipher::BlockCipher,
         R: rand::Rng,
     >(
-        xts: Xts<A>,
+        xts_enc: XtsEncrypter<A, K>,
+        xts_dec: XtsDecrypter<A, K>,
         other_xts: xts_mode::Xts128<C>,
         rng: &mut R,
     ) {
@@ -119,7 +126,8 @@ fn identical_to_xtsmode_crate() {
         // encrypt with our impl
         let mut ciphertext = plaintext.clone();
         let tweak: Tweak = rng.gen::<u128>().into();
-        xts.encrypt_data_unit(tweak.clone(), &mut ciphertext)
+        xts_enc
+            .encrypt_data_unit(tweak.clone(), &mut ciphertext)
             .unwrap();
 
         // encrypt with the other impl
@@ -130,7 +138,7 @@ fn identical_to_xtsmode_crate() {
         assert_eq!(ciphertext, other_ciphertext);
 
         // decrypt ciphertext in place
-        xts.decrypt_data_unit(tweak, &mut ciphertext).unwrap();
+        xts_dec.decrypt_data_unit(tweak, &mut ciphertext).unwrap();
         assert_eq!(plaintext, ciphertext);
 
         // and with the other impl
