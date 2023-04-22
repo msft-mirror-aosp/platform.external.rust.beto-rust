@@ -13,11 +13,13 @@
 // limitations under the License.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
 use ctr::cipher::{KeyIvInit as _, StreamCipher as _, StreamCipherSeek as _};
-use ldt::{DefaultPadder, Ldt, LdtKey, Mix, Padder, Swap, XorPadder};
+use ldt::{
+    DefaultPadder, LdtDecryptCipher, LdtEncryptCipher, LdtKey, Mix, Padder, Swap, XorPadder,
+};
 use ldt_tbc::TweakableBlockCipher;
-use rand::SeedableRng as _;
 use sha2::Digest as _;
 use std::marker;
 use subtle::ConstantTimeEq as _;
@@ -124,15 +126,15 @@ fn build_bench_state<F: ScanCipherFactory, D: ScanDigest>(
     keys: usize,
     plaintext_len: usize,
 ) -> LdtBenchState<F::Cipher, D> {
-    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
 
     let scenarios = (0..keys)
-        .map(|_| random_ldt_scenario::<_, _, D>(&factory, &mut rng, plaintext_len))
+        .map(|_| random_ldt_scenario::<RustCrypto, _, D>(&factory, &mut rng, plaintext_len))
         .collect::<Vec<_>>();
 
     LdtBenchState {
         scenarios,
-        unfindable_ciphertext: random_vec(&mut rng, plaintext_len),
+        unfindable_ciphertext: random_vec::<RustCrypto>(&mut rng, plaintext_len),
         decrypt_buf: Vec::with_capacity(plaintext_len),
     }
 }
@@ -142,13 +144,13 @@ struct ScanScenario<C: ScanCipher, D: ScanDigest> {
     plaintext_prefix_hash: D::Output,
 }
 
-fn random_ldt_scenario<R: rand::Rng + rand::CryptoRng, F: ScanCipherFactory, D: ScanDigest>(
+fn random_ldt_scenario<C: CryptoProvider, F: ScanCipherFactory, D: ScanDigest>(
     factory: &F,
-    rng: &mut R,
+    rng: &mut C::CryptoRng,
     plaintext_len: usize,
 ) -> ScanScenario<F::Cipher, D> {
-    let cipher = factory.build_cipher(rng);
-    let plaintext = random_vec(rng, plaintext_len);
+    let cipher = factory.build_cipher::<C>(rng);
+    let plaintext = random_vec::<C>(rng, plaintext_len);
     let mut hasher = D::new();
     let mut plaintext_prefix_hash = D::new_output();
     hasher.update(&plaintext[..MATCH_LEN]);
@@ -160,7 +162,7 @@ fn random_ldt_scenario<R: rand::Rng + rand::CryptoRng, F: ScanCipherFactory, D: 
     }
 }
 
-fn random_vec<R: rand::Rng>(rng: &mut R, len: usize) -> Vec<u8> {
+fn random_vec<C: CryptoProvider>(rng: &mut C::CryptoRng, len: usize) -> Vec<u8> {
     let mut bytes = Vec::<u8>::new();
     bytes.extend((0..len).map(|_| rng.gen::<u8>()));
     bytes
@@ -174,13 +176,14 @@ trait ScanCipher {
 trait ScanCipherFactory {
     type Cipher: ScanCipher;
 
-    fn build_cipher<R: rand::Rng + rand::CryptoRng>(&self, key_rng: &mut R) -> Self::Cipher;
+    fn build_cipher<C: CryptoProvider>(&self, key_rng: &mut C::CryptoRng) -> Self::Cipher;
 }
 
 /// A wrapper that lets us avoid percolating the need to specify a bogus and type-confused padder
 /// for ciphers that don't use one.
 struct LdtScanCipher<const B: usize, T: TweakableBlockCipher<B>, M: Mix, P: Padder<B, T>> {
-    ldt: Ldt<B, T, M>,
+    ldt_enc: LdtEncryptCipher<B, T, M>,
+    ldt_dec: LdtDecryptCipher<B, T, M>,
     padder: P,
 }
 
@@ -188,11 +191,11 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix, P: Padder<B, T>> ScanCi
     for LdtScanCipher<B, T, M, P>
 {
     fn encrypt(&mut self, buf: &mut [u8]) {
-        self.ldt.encrypt(buf, &self.padder).unwrap();
+        self.ldt_enc.encrypt(buf, &self.padder).unwrap();
     }
 
     fn decrypt(&mut self, buf: &mut [u8]) {
-        self.ldt.decrypt(buf, &self.padder).unwrap();
+        self.ldt_dec.decrypt(buf, &self.padder).unwrap();
     }
 }
 
@@ -228,28 +231,29 @@ where
 {
     type Cipher = LdtScanCipher<B, T, M, P>;
 
-    fn build_cipher<R: rand::Rng + rand::CryptoRng>(&self, key_rng: &mut R) -> Self::Cipher {
-        let key: LdtKey<T::Key> = LdtKey::from_random(key_rng);
+    fn build_cipher<C: CryptoProvider>(&self, key_rng: &mut C::CryptoRng) -> Self::Cipher {
+        let key: LdtKey<T::Key> = LdtKey::from_random::<C>(key_rng);
         LdtScanCipher {
-            ldt: Ldt::new(&key),
-            padder: P::generate(key_rng),
+            ldt_enc: LdtEncryptCipher::new(&key),
+            ldt_dec: LdtDecryptCipher::new(&key),
+            padder: P::generate::<C>(key_rng),
         }
     }
 }
 
 /// A helper trait for making padders from an RNG
 trait RandomPadder {
-    fn generate<R: rand::Rng>(rng: &mut R) -> Self;
+    fn generate<C: CryptoProvider>(rng: &mut C::CryptoRng) -> Self;
 }
 
 impl RandomPadder for DefaultPadder {
-    fn generate<R: rand::Rng>(_rng: &mut R) -> Self {
+    fn generate<C: CryptoProvider>(_rng: &mut C::CryptoRng) -> Self {
         Self::default()
     }
 }
 
 impl<const T: usize> RandomPadder for XorPadder<T> {
-    fn generate<R: rand::Rng>(rng: &mut R) -> Self {
+    fn generate<C: CryptoProvider>(rng: &mut C::CryptoRng) -> Self {
         let mut salt = [0_u8; T];
         rng.fill(&mut salt[..]);
         salt.into()
@@ -275,7 +279,7 @@ struct AesCtrFactory {}
 impl ScanCipherFactory for AesCtrFactory {
     type Cipher = Aes128Ctr64LE;
 
-    fn build_cipher<R: rand::Rng>(&self, key_rng: &mut R) -> Self::Cipher {
+    fn build_cipher<C: CryptoProvider>(&self, key_rng: &mut C::CryptoRng) -> Self::Cipher {
         let mut key = [0_u8; 16];
         key_rng.fill(&mut key);
 

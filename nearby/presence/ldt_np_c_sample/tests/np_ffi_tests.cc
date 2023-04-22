@@ -40,7 +40,15 @@ static NpLdtSalt salt  = {
     {12, 15}
 };
 
-static NpLdtHandle create_handle_from_test_key ()
+static NpLdtEncryptHandle create_enc_handle_from_test_key ()
+{
+    NpLdtKeySeed key_seed;
+    memcpy(key_seed.bytes, KEY_SEED_BYTES, 32);
+
+    return NpLdtEncryptCreate(key_seed);
+}
+
+static NpLdtDecryptHandle create_dec_handle_from_test_key ()
 {
     NpLdtKeySeed key_seed;
     memcpy(key_seed.bytes, KEY_SEED_BYTES, 32);
@@ -48,7 +56,7 @@ static NpLdtHandle create_handle_from_test_key ()
     NpMetadataKeyHmac known_hmac;
     memcpy(known_hmac.bytes, KNOWN_HMAC_BYTES, 32);
 
-    return NpLdtCreate(key_seed, known_hmac);
+    return NpLdtDecryptCreate(key_seed, known_hmac);
 }
 
 static void hex_string_to_bytes(const char * hexString, uint8_t * out, size_t len)
@@ -105,8 +113,8 @@ TEST(NpFfiTests, TestJsonData) {
         hex_string_to_bytes(metadata_key_hmac, known_hmac.bytes, len);
         ASSERT_EQ(len, 32);
 
-        NpLdtHandle handle = NpLdtCreate(np_key_seed, known_hmac);
-        ASSERT_NE(handle, 0);
+        NpLdtEncryptHandle enc_handle = NpLdtEncryptCreate(np_key_seed);
+        ASSERT_NE(enc_handle.handle, 0);
 
         NpLdtSalt salt;
         len = strlen(adv_salt)/2;
@@ -116,14 +124,17 @@ TEST(NpFfiTests, TestJsonData) {
         len = strlen(plaintext)/2;
         uint8_t* buffer = (uint8_t*)malloc(len);
         hex_string_to_bytes(plaintext, buffer, len);
-        NP_LDT_RESULT result = NpLdtEncrypt(handle, buffer, len, salt);
+        NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, buffer, len, salt);
         ASSERT_EQ(result, NP_LDT_SUCCESS);
 
         char output[strlen(plaintext) + 1];
         bytes_to_hex_string(buffer, output, len);
         ASSERT_EQ(strcmp(output, ciphertext), 0);
 
-        result = NpLdtDecryptAndVerify(handle, buffer, len, salt);
+        NpLdtDecryptHandle dec_handle = NpLdtDecryptCreate(np_key_seed, known_hmac);
+        ASSERT_NE(dec_handle.handle, 0);
+
+        result = NpLdtDecryptAndVerify(dec_handle, buffer, len, salt);
         ASSERT_EQ(result, NP_LDT_SUCCESS);
 
         bytes_to_hex_string(buffer, output, len);
@@ -139,13 +150,15 @@ TEST(NpFfiTests, TestValidLength)
     uint8_t* plaintext = (uint8_t*) malloc(20 * sizeof(uint8_t));
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
-    NpLdtHandle handle = create_handle_from_test_key();
-    ASSERT_NE(handle, 0);
+    NpLdtEncryptHandle enc_handle = create_enc_handle_from_test_key();
+    ASSERT_NE(enc_handle.handle, 0);
 
-    NP_LDT_RESULT result = NpLdtEncrypt(handle, plaintext, 20, salt);
+    NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, plaintext, 20, salt);
     ASSERT_EQ(result, NP_LDT_SUCCESS);
 
-    result = NpLdtDecryptAndVerify(handle, plaintext, 20, salt);
+    NpLdtDecryptHandle dec_handle = create_dec_handle_from_test_key();
+
+    result = NpLdtDecryptAndVerify(dec_handle, plaintext, 20, salt);
     ASSERT_EQ(result, NP_LDT_SUCCESS);
     free(plaintext);
 }
@@ -155,13 +168,13 @@ TEST(NpFfiTests, TestEncryptInvalidLength)
     uint8_t* plaintext = (uint8_t*) malloc(32 * sizeof(uint8_t));
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
-    NpLdtHandle handle = create_handle_from_test_key();
-    ASSERT_NE(handle, 0);
+    NpLdtEncryptHandle enc_handle = create_enc_handle_from_test_key();
+    ASSERT_NE(enc_handle.handle, 0);
 
-    NP_LDT_RESULT result = NpLdtEncrypt(handle, plaintext, 32, salt);
+    NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, plaintext, 32, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_INVALID_LENGTH);
 
-    result = NpLdtEncrypt(handle, plaintext, 15, salt);
+    result = NpLdtEncrypt(enc_handle, plaintext, 15, salt);
     ASSERT_EQ(result,  NP_LDT_ERROR_INVALID_LENGTH);
     free(plaintext);
 }
@@ -171,13 +184,13 @@ TEST(NpFfiTests, TestDecryptInvalidLength)
     uint8_t* plaintext = (uint8_t*) malloc(32 * sizeof(uint8_t));
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
-    NpLdtHandle handle = create_handle_from_test_key();
-    ASSERT_NE(handle, 0);
+    NpLdtDecryptHandle dec_handle = create_dec_handle_from_test_key();
+    ASSERT_NE(dec_handle.handle, 0);
 
-    NP_LDT_RESULT result = NpLdtDecryptAndVerify(handle, plaintext, 32, salt);
+    NP_LDT_RESULT result = NpLdtDecryptAndVerify(dec_handle, plaintext, 32, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_INVALID_LENGTH);
 
-    result = NpLdtDecryptAndVerify(handle, plaintext, 15, salt);
+    result = NpLdtDecryptAndVerify(dec_handle, plaintext, 15, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_INVALID_LENGTH);
     free(plaintext);
 }
@@ -189,10 +202,10 @@ TEST(NpFfiTests, TestDecryptMacMismatch)
     uint8_t* plaintext = (uint8_t*) malloc(30 * sizeof(char));
     memcpy(plaintext, test_text, 29);
 
-    NpLdtHandle handle = create_handle_from_test_key();
-    ASSERT_NE(handle, 0);
+    NpLdtDecryptHandle dec_handle = create_dec_handle_from_test_key();
+    ASSERT_NE(dec_handle.handle, 0);
 
-    NP_LDT_RESULT result = NpLdtDecryptAndVerify(handle, plaintext, 24, salt);
+    NP_LDT_RESULT result = NpLdtDecryptAndVerify(dec_handle, plaintext, 24, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_MAC_MISMATCH);
 
     ASSERT_EQ(strcmp((char *)plaintext, test_text), 0);
@@ -204,17 +217,17 @@ TEST(NpFfiTests, TestInvalidHandle)
     uint8_t* plaintext = (uint8_t*) malloc(20 * sizeof(uint8_t));
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
-    NpLdtHandle handle = create_handle_from_test_key();
-    ASSERT_NE(handle, 0);
-
-    NP_LDT_RESULT result = NpLdtEncrypt(1234, plaintext, 20, salt);
+    NP_LDT_RESULT result = NpLdtEncrypt(NpLdtEncryptHandle{1234}, plaintext, 20, salt);
     ASSERT_EQ(result, NP_LDT_INVALID_HANDLE);
 
-    result = NpLdtDecryptAndVerify(1234, plaintext, 20, salt);
+    result = NpLdtDecryptAndVerify(NpLdtDecryptHandle{1234}, plaintext, 20, salt);
     ASSERT_EQ(result, NP_LDT_INVALID_HANDLE);
     free(plaintext);
 
-    result = NpLdtClose(1234);
+    result = NpLdtEncryptClose(NpLdtEncryptHandle{1234});
+    ASSERT_EQ(result, NP_LDT_INVALID_HANDLE);
+
+    result = NpLdtDecryptClose(NpLdtDecryptHandle{1234});
     ASSERT_EQ(result, NP_LDT_INVALID_HANDLE);
 }
 
@@ -235,21 +248,27 @@ void *worker_thread(void *arg)
     uint8_t* plaintext = (uint8_t*) malloc(20 * sizeof(uint8_t));
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
-    NpLdtHandle handle = create_handle_from_test_key();
-    if (handle == 0){
+    NpLdtEncryptHandle enc_handle = create_enc_handle_from_test_key();
+    if (enc_handle.handle == 0){
         printf("Error creating handle in thread!");
         free(plaintext);
         exit(2);
     }
 
-    NP_LDT_RESULT result = NpLdtEncrypt(handle, plaintext, 20, salt);
+    NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, plaintext, 20, salt);
     if (result != NP_LDT_SUCCESS){
         printf("Error in encrypt in thread!");
         free(plaintext);
         exit(2);
     }
 
-    result = NpLdtDecryptAndVerify(handle, plaintext, 20, salt);
+    NpLdtDecryptHandle dec_handle = create_dec_handle_from_test_key();
+    if (dec_handle.handle == 0){
+        printf("Error creating handle in thread!");
+        free(plaintext);
+        exit(2);
+    }
+    result = NpLdtDecryptAndVerify(dec_handle, plaintext, 20, salt);
     if (result != NP_LDT_SUCCESS){
         printf("Error in decrypt in thread!");
         free(plaintext);

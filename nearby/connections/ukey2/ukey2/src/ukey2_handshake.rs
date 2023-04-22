@@ -99,12 +99,16 @@ impl WireCompatibilityLayer for HandshakeImplementation {
                         num_bigint::Sign::Plus,
                         num_bigint::BigUint::from_bytes_be(y.to_vec().as_slice()),
                     );
-                    let mut proto_key = securemessage::EcP256PublicKey::default();
-                    proto_key.set_x(bigboi_x.to_signed_bytes_be());
-                    proto_key.set_y(bigboi_y.to_signed_bytes_be());
-                    let mut key = securemessage::GenericPublicKey::default();
-                    key.set_field_type(securemessage::PublicKeyType::EC_P256);
-                    key.set_ec_p256_public_key(proto_key);
+                    let proto_key = securemessage::EcP256PublicKey {
+                        x: Some(bigboi_x.to_signed_bytes_be()),
+                        y: Some(bigboi_y.to_signed_bytes_be()),
+                        ..Default::default()
+                    };
+                    let key = securemessage::GenericPublicKey {
+                        type_: Some(securemessage::PublicKeyType::EC_P256.into()),
+                        ec_p256_public_key: Some(proto_key).into(),
+                        ..Default::default()
+                    };
                     key.write_to_bytes().ok()
                 }
                 HandshakeCipher::Curve25519Sha512 => None,
@@ -392,8 +396,10 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
                 >>::Rng as CryptoRng>::new(),
             );
         let curve25519_client_finished_bytes = {
-            let mut client_finished = ukey::Ukey2ClientFinished::default();
-            client_finished.set_public_key(curve25519_secret.public_key_bytes());
+            let client_finished = ukey::Ukey2ClientFinished {
+                public_key: Some(curve25519_secret.public_key_bytes()),
+                ..Default::default()
+            };
             client_finished.to_wrapped_msg().write_to_bytes().unwrap()
         };
         let curve25519_client_finished_hash =
@@ -406,35 +412,42 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
                         >>::Rng as CryptoRng>::new(),
                     );
         let p256_client_finished_bytes = {
-            let mut client_finished = ukey::Ukey2ClientFinished::default();
-            client_finished.set_public_key(
-                handshake_impl
-                    .encode_public_key::<C>(
-                        p256_secret.public_key_bytes(),
-                        HandshakeCipher::P256Sha512,
-                    )
-                    .unwrap(),
-            );
+            let client_finished = ukey::Ukey2ClientFinished {
+                public_key: Some(
+                    handshake_impl
+                        .encode_public_key::<C>(
+                            p256_secret.public_key_bytes(),
+                            HandshakeCipher::P256Sha512,
+                        )
+                        .unwrap(),
+                ),
+                ..Default::default()
+            };
             client_finished.to_wrapped_msg().write_to_bytes().unwrap()
         };
         let p256_client_finished_hash = C::Sha512::sha512(&p256_client_finished_bytes).to_vec();
 
         // ClientInit Message
         let client_init_bytes = {
-            let mut curve25519_commitment = ukey::Ukey2ClientInit_CipherCommitment::default();
-            curve25519_commitment
-                .set_handshake_cipher(HandshakeCipher::Curve25519Sha512.as_proto());
-            curve25519_commitment.set_commitment(curve25519_client_finished_hash);
+            let curve25519_commitment = ukey::ukey2client_init::CipherCommitment {
+                handshake_cipher: Some(HandshakeCipher::Curve25519Sha512.as_proto().into()),
+                commitment: Some(curve25519_client_finished_hash),
+                ..Default::default()
+            };
 
-            let mut p256_commitment = ukey::Ukey2ClientInit_CipherCommitment::default();
-            p256_commitment.set_handshake_cipher(HandshakeCipher::P256Sha512.as_proto());
-            p256_commitment.set_commitment(p256_client_finished_hash);
+            let p256_commitment = ukey::ukey2client_init::CipherCommitment {
+                handshake_cipher: Some(HandshakeCipher::P256Sha512.as_proto().into()),
+                commitment: Some(p256_client_finished_hash),
+                ..Default::default()
+            };
 
-            let mut client_init = ukey::Ukey2ClientInit::default();
-            client_init.set_version(1);
-            client_init.set_random(random);
-            client_init.set_cipher_commitments(vec![curve25519_commitment, p256_commitment].into());
-            client_init.set_next_protocol(next_protocol.to_string());
+            let client_init = ukey::Ukey2ClientInit {
+                version: Some(1),
+                random: Some(random),
+                cipher_commitments: vec![curve25519_commitment, p256_commitment],
+                next_protocol: Some(next_protocol.to_string()),
+                ..Default::default()
+            };
             client_init.to_wrapped_msg().write_to_bytes().unwrap()
         };
 

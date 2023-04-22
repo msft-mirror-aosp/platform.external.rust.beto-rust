@@ -5,4 +5,4 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-rand.workspace = true
+crypto_provider.workspace = true

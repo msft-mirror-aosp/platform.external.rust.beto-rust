@@ -26,6 +26,8 @@ use ukey2_connections::{
 enum Type {
     SentByInitiator,
     SentByServer,
+    ReceivedByInitiator,
+    ReceivedByServer,
 }
 
 #[derive(Debug, Arbitrary)]
@@ -101,6 +103,16 @@ fuzz_target!(|input: FuzzInput| {
                     .decode_message_from_peer::<RustCrypto, _>(&ciphertext, associated_data)
                     .unwrap();
                 assert_eq!(decoded, payload);
+            }
+            Type::ReceivedByInitiator => {
+                // Both Ok and Err results are possible here since the input is Arbitrary payload
+                let _unused_result = initiator_connection
+                    .decode_message_from_peer::<RustCrypto, _>(&payload, associated_data);
+            }
+            Type::ReceivedByServer => {
+                // Both Ok and Err results are possible here since the input is Arbitrary payload
+                let _unused_result = server_connection
+                    .decode_message_from_peer::<RustCrypto, _>(&payload, associated_data);
             }
         }
     }

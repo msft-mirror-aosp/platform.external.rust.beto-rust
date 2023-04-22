@@ -351,7 +351,7 @@ pub unsafe extern "C" fn from_saved_session(
     arr: CFFIByteArray,
 ) -> CD2DRestoreConnectionContextV1Result {
     let saved_session = std::slice::from_raw_parts(arr.ptr, arr.len);
-    let ctx = D2DConnectionContextV1::from_saved_session(saved_session);
+    let ctx = D2DConnectionContextV1::from_saved_session::<CryptoProvider>(saved_session);
     if let Ok(conn_ctx) = ctx {
         let final_ctx = Box::new(conn_ctx);
         CD2DRestoreConnectionContextV1Result {

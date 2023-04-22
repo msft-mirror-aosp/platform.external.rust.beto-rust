@@ -24,7 +24,7 @@ ExternalProject_Add(
     ldt_np_adv_ffi
     DOWNLOAD_COMMAND ""
     CONFIGURE_COMMAND ""
-    BUILD_COMMAND cargo build COMMAND cargo build --release
+    BUILD_COMMAND cargo build COMMAND cargo build --release --no-default-features --features std
     BINARY_DIR "${CMAKE_SOURCE_DIR}/ldt_np_adv_ffi"
     INSTALL_COMMAND "")
 
