@@ -11,6 +11,7 @@ crypto_provider_rustcrypto = {path = "../../crypto/crypto_provider_rustcrypto", 
 crypto_provider_boringssl = {path = "../../crypto/crypto_provider_boringssl", optional = true}
 ldt = { path = "../ldt" }
 ldt_np_adv = { path = "../ldt_np_adv" }
+np_hkdf = {path = "../np_hkdf"}
 
 cfg-if = "1.0.0"
 lazy_static = { version = "1.4.0"}
@@ -18,7 +19,7 @@ lazy_static = { version = "1.4.0"}
 # no_std only deps
 libc_alloc = {version = "1.0.4", optional = true }
 panic-abort = { version = "0.3.2", optional = true }
-spin = {version = "0.9.7", optional = true }
+spin = {version = "0.9.8", optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"

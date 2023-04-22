@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crypto_provider::aes;
 use crypto_provider::aes::BLOCK_SIZE;
+use crypto_provider::{aes, CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
-use ldt::{Ldt, LdtKey, Swap, XorPadder};
+use ldt::{LdtEncryptCipher, LdtKey, Swap, XorPadder};
 use rand::{Rng as _, SeedableRng as _};
 use rand_ext::*;
 use serde_json::json;
@@ -23,18 +23,20 @@ use xts_aes::XtsAes128;
 
 fn main() {
     let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut cp_rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
 
     let mut array = Vec::<serde_json::Value>::new();
     for _ in 0..1_000 {
         let len = rng.gen_range(BLOCK_SIZE..BLOCK_SIZE * 2);
-        let plaintext = random_vec(&mut rng, len);
-        let key = LdtKey::from_random(&mut rng);
-        let pad_xor: [u8; aes::BLOCK_SIZE] = random_bytes(&mut rng);
+        let plaintext = random_vec_rc(&mut rng, len);
+        let key = LdtKey::from_random::<RustCrypto>(&mut cp_rng);
+        let pad_xor: [u8; aes::BLOCK_SIZE] = random_bytes_rc(&mut rng);
 
-        let ldt = Ldt::<BLOCK_SIZE, XtsAes128<RustCrypto>, Swap>::new(&key);
+        let ldt_enc = LdtEncryptCipher::<BLOCK_SIZE, XtsAes128<RustCrypto>, Swap>::new(&key);
 
         let mut ciphertext = plaintext.clone();
-        ldt.encrypt(&mut ciphertext, &XorPadder::from(pad_xor))
+        ldt_enc
+            .encrypt(&mut ciphertext, &XorPadder::from(pad_xor))
             .unwrap();
 
         array.push(json!({
