@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 use std::ptr::null_mut;
 
 use lazy_static::lazy_static;
@@ -26,7 +26,6 @@ use ukey2_connections::{
     D2DConnectionContextV1, D2DHandshakeContext, HandshakeImplementation,
     InitiatorD2DHandshakeContext, ServerD2DHandshakeContext,
 };
-use ukey2_rs::error_handler::NoOpHandler;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "rustcrypto")] {
@@ -45,15 +44,6 @@ pub struct RustFFIByteArray {
 pub struct CFFIByteArray {
     ptr: *mut u8,
     len: usize,
-}
-
-/// Constructs a `Box<T>`, leaks a pointer to it, and converts the pointer to `*mut c_void`.
-fn box_to_handle<T>(thing: T) -> *mut c_void {
-    // Box::new heap allocates space for the thing
-    // Box::into_raw intentionally leaks into an aligned, non-null pointer
-    let pointer = Box::into_raw(Box::new(thing));
-    // Infallible conversion to `*mut c_void`
-    pointer as *mut c_void
 }
 
 type D2DBox = Box<dyn D2DHandshakeContext>;
@@ -109,26 +99,23 @@ pub extern "C" fn is_handshake_complete(handle: u64) -> bool {
 #[no_mangle]
 pub extern "C" fn get_next_handshake_message(handle: u64) -> RustFFIByteArray {
     // TODO: error handling
-    let msg = HANDLE_MAPPING
+    let opt_msg = HANDLE_MAPPING
         .lock()
         .get(&handle)
-        .unwrap()
-        .get_next_handshake_message()
-        .unwrap();
-    let ret_len = msg.len();
-    let data: CString = unsafe { CString::from_vec_unchecked(msg) };
-    RustFFIByteArray {
-        ptr: data.into_raw() as *mut u8,
-        len: ret_len,
+        .and_then(|c| c.get_next_handshake_message());
+    if let Some(msg) = opt_msg {
+        let ret_len = msg.len();
+        let data: CString = unsafe { CString::from_vec_unchecked(msg) };
+        RustFFIByteArray {
+            ptr: data.into_raw() as *mut u8,
+            len: ret_len,
+        }
+    } else {
+        RustFFIByteArray {
+            ptr: null_mut(),
+            len: usize::MAX,
+        }
     }
-}
-
-#[no_mangle]
-pub extern "C" fn can_send_payload_in_handshake_message(handle: u64) -> bool {
-    HANDLE_MAPPING
-        .lock()
-        .get(&handle)
-        .map_or(false, |ctx| ctx.can_send_payload_in_handshake_message())
 }
 
 /// # Safety
@@ -136,18 +123,21 @@ pub extern "C" fn can_send_payload_in_handshake_message(handle: u64) -> bool {
 #[no_mangle]
 pub unsafe extern "C" fn parse_handshake_message(
     handle: u64,
-    arr: RustFFIByteArray,
+    arr: CFFIByteArray,
 ) -> RustFFIByteArray {
     let msg = Vec::<u8>::from_raw_parts(arr.ptr, arr.len, arr.len);
     // TODO error handling
-    let _ = HANDLE_MAPPING
+    let result = HANDLE_MAPPING
         .lock()
         .get_mut(&handle)
         .unwrap()
         .handle_handshake_message(msg.as_slice());
+    if let Err(error) = result {
+        log::error!("{:?}", error);
+    }
     RustFFIByteArray {
         ptr: null_mut(),
-        len: 0,
+        len: usize::MAX,
     }
 }
 
@@ -190,9 +180,8 @@ pub extern "C" fn to_connection_context(handle: u64) -> u64 {
 // Responder-specific functions
 #[no_mangle]
 pub extern "C" fn responder_new() -> u64 {
-    let ctx = Box::new(ServerD2DHandshakeContext::<CryptoProvider, _>::new(
-        HandshakeImplementation::Weird,
-        NoOpHandler::default(),
+    let ctx = Box::new(ServerD2DHandshakeContext::<CryptoProvider>::new(
+        HandshakeImplementation::PublicKeyInProtobuf,
     ));
     insert_gen_handle(ctx)
 }
@@ -203,9 +192,8 @@ pub extern "C" fn responder_new() -> u64 {
 /// We treat next_protocol as data, not as executable memory.
 #[no_mangle]
 pub extern "C" fn initiator_new() -> u64 {
-    let ctx = Box::new(InitiatorD2DHandshakeContext::<CryptoProvider, _>::new(
-        HandshakeImplementation::Weird,
-        NoOpHandler::default(),
+    let ctx = Box::new(InitiatorD2DHandshakeContext::<CryptoProvider>::new(
+        HandshakeImplementation::PublicKeyInProtobuf,
     ));
     insert_gen_handle(ctx)
 }
@@ -224,7 +212,7 @@ pub unsafe extern "C" fn encode_message_to_peer(
     if msg.len == 0 {
         return RustFFIByteArray {
             ptr: null_mut(),
-            len: 0,
+            len: usize::MAX,
         };
     }
     let msg = std::slice::from_raw_parts(msg.ptr, msg.len);
@@ -239,12 +227,19 @@ pub unsafe extern "C" fn encode_message_to_peer(
     let ret = CONNECTION_HANDLE_MAPPING
         .lock()
         .get_mut(&handle)
-        .unwrap()
-        .encode_message_to_peer::<CryptoProvider, _>(msg, associated_data);
-    let len = ret.len();
-    RustFFIByteArray {
-        ptr: ret.leak().as_mut_ptr(),
-        len,
+        .map(|c| c.encode_message_to_peer::<CryptoProvider, _>(msg, associated_data));
+    if let Some(msg) = ret {
+        let len = msg.len();
+        RustFFIByteArray {
+            ptr: msg.leak().as_mut_ptr(),
+            len,
+        }
+    } else {
+        log::error!("Was unable to find handle!");
+        RustFFIByteArray {
+            ptr: null_mut(),
+            len: usize::MAX,
+        }
     }
 }
 
@@ -259,7 +254,7 @@ pub unsafe extern "C" fn decode_message_from_peer(
     if msg.len == 0 {
         return RustFFIByteArray {
             ptr: null_mut(),
-            len: 0,
+            len: usize::MAX,
         };
     }
     let msg = std::slice::from_raw_parts(msg.ptr, msg.len);
@@ -285,7 +280,7 @@ pub unsafe extern "C" fn decode_message_from_peer(
     } else {
         RustFFIByteArray {
             ptr: null_mut(),
-            len: 0,
+            len: usize::MAX,
         }
     }
 }
@@ -297,11 +292,9 @@ pub extern "C" fn get_session_unique(handle: u64) -> RustFFIByteArray {
         .get(&handle)
         .unwrap()
         .get_session_unique::<CryptoProvider>();
-    let boxed = session_unique_bytes.into_boxed_slice();
-    let handle_size = boxed.len();
-    let handle = box_to_handle(boxed);
+    let handle_size = session_unique_bytes.len();
     RustFFIByteArray {
-        ptr: handle as *mut u8,
+        ptr: session_unique_bytes.leak().as_mut_ptr(),
         len: handle_size,
     }
 }
@@ -331,25 +324,23 @@ pub extern "C" fn save_session(handle: u64) -> RustFFIByteArray {
         .get(&handle)
         .unwrap()
         .save_session();
-    let boxed = key.into_boxed_slice();
-    let handle_size = boxed.len();
-    let handle = box_to_handle(boxed);
+    let handle_size = key.len();
     RustFFIByteArray {
-        ptr: handle as *mut u8,
+        ptr: key.leak().as_mut_ptr(),
         len: handle_size,
     }
 }
 
-#[repr(C)]
+#[repr(i32)]
 #[derive(Debug)]
 pub enum Status {
-    Error,
     Good,
+    Error,
 }
 
 #[repr(C)]
 pub struct CD2DRestoreConnectionContextV1Result {
-    result: u64,
+    handle: u64,
     status: Status,
 }
 
@@ -357,20 +348,23 @@ pub struct CD2DRestoreConnectionContextV1Result {
 /// We error out if the length is incorrect (too large or too small) for restoring a session.
 #[no_mangle]
 pub unsafe extern "C" fn from_saved_session(
-    ptr: *mut u8,
-    len: usize,
+    arr: CFFIByteArray,
 ) -> CD2DRestoreConnectionContextV1Result {
-    let saved_session = std::slice::from_raw_parts(ptr, len);
-    let ctx = D2DConnectionContextV1::from_saved_session(saved_session);
+    let saved_session = std::slice::from_raw_parts(arr.ptr, arr.len);
+    let ctx = D2DConnectionContextV1::from_saved_session::<CryptoProvider>(saved_session);
     if let Ok(conn_ctx) = ctx {
         let final_ctx = Box::new(conn_ctx);
         CD2DRestoreConnectionContextV1Result {
-            result: insert_conn_gen_handle(final_ctx),
+            handle: insert_conn_gen_handle(final_ctx),
             status: Status::Good,
         }
     } else {
+        log::error!(
+            "failed to restore session with error {:?}",
+            ctx.unwrap_err()
+        );
         CD2DRestoreConnectionContextV1Result {
-            result: 0,
+            handle: u64::MAX,
             status: Status::Error,
         }
     }

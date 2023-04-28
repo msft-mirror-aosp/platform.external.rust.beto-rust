@@ -14,26 +14,27 @@
 // limitations under the License.
 
 use crypto_provider_rustcrypto::RustCrypto;
+use ldt::*;
 use ldt_np_adv::*;
 use libfuzzer_sys::fuzz_target;
+use xts_aes::XtsAes128;
 
 fuzz_target!(|data: LdtNpRoundtripFuzzInput| {
     let salt = data.salt.into();
     let padder = salt_padder::<16, RustCrypto>(salt);
 
     let hkdf = np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&data.key_seed);
-    let ldt = ldt_xts_aes_128::<RustCrypto>(&hkdf.legacy_ldt_key());
+    let ldt_enc = LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&hkdf.legacy_ldt_key());
     let metadata_key_hmac: [u8; 32] = hkdf
         .legacy_metadata_key_hmac_key()
         .calculate_hmac(&data.plaintext[..14]);
 
-    let cipher_config = LdtAdvCipherConfig::new(data.key_seed, metadata_key_hmac);
-    let cipher = cipher_config.build_adv_decrypter_xts_aes_128::<RustCrypto>();
+    let cipher = build_np_adv_decrypter_from_key_seed::<RustCrypto>(&hkdf, metadata_key_hmac);
 
     let len = 16 + (data.len as usize % 16);
     let mut ciphertext = data.plaintext;
 
-    ldt.encrypt(&mut ciphertext[..len], &padder).unwrap();
+    ldt_enc.encrypt(&mut ciphertext[..len], &padder).unwrap();
     let plaintext = cipher
         .decrypt_and_verify(&ciphertext[..len], &padder)
         .unwrap();

@@ -13,29 +13,36 @@
 // limitations under the License.
 
 use crypto_provider::aes::BLOCK_SIZE;
+use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
 use ldt::*;
 use ldt_tbc::TweakableBlockCipher;
+use rand::rngs::StdRng;
 use rand::{self, distributions, Rng as _, SeedableRng as _};
 use rand_ext::{random_bytes, random_vec};
 use xts_aes::{XtsAes128, XtsAes256};
 
 #[test]
 fn roundtrip_normal_padder() {
-    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
+    let mut rc_rng = rand::rngs::StdRng::from_entropy();
     let plaintext_len_range = distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 2 - 1);
 
     for _ in 0..100_000 {
-        if rng.gen() {
-            do_roundtrip(
-                Ldt::<16, XtsAes128<RustCrypto>, Swap>::new(&LdtKey::from_random(&mut rng)),
+        if rc_rng.gen() {
+            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
+            do_roundtrip::<16, _, _, _, RustCrypto>(
+                LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
                 &DefaultPadder::default(),
                 &mut rng,
                 &plaintext_len_range,
             )
         } else {
-            do_roundtrip(
-                Ldt::<16, XtsAes256<RustCrypto>, Swap>::new(&LdtKey::from_random(&mut rng)),
+            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
+            do_roundtrip::<16, _, _, _, RustCrypto>(
+                LdtEncryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
                 &DefaultPadder::default(),
                 &mut rng,
                 &plaintext_len_range,
@@ -46,23 +53,29 @@ fn roundtrip_normal_padder() {
 
 #[test]
 fn roundtrip_xor_padder() {
-    let mut rng = rand::rngs::StdRng::from_entropy();
-    // 2 bytes smaller becauwe're using a 2 byte salt
+    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
+    let mut rc_rng = rand::rngs::StdRng::from_entropy();
+    // 2 bytes smaller because we're using a 2 byte salt
     let plaintext_len_range =
         distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 2 - 1 - 2);
 
     for _ in 0..100_000 {
-        let padder: XorPadder<BLOCK_SIZE> = random_bytes(&mut rng).into();
-        if rng.gen() {
-            do_roundtrip(
-                Ldt::<16, XtsAes128<RustCrypto>, Swap>::new(&LdtKey::from_random(&mut rng)),
+        let padder: XorPadder<BLOCK_SIZE> = random_bytes::<BLOCK_SIZE, RustCrypto>(&mut rng).into();
+
+        if rc_rng.gen() {
+            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
+            do_roundtrip::<16, _, _, _, RustCrypto>(
+                LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
                 &padder,
                 &mut rng,
                 &plaintext_len_range,
             )
         } else {
-            do_roundtrip(
-                Ldt::<16, XtsAes256<RustCrypto>, Swap>::new(&LdtKey::from_random(&mut rng)),
+            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
+            do_roundtrip::<16, _, _, _, RustCrypto>(
+                LdtEncryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
                 &padder,
                 &mut rng,
                 &plaintext_len_range,
@@ -76,22 +89,24 @@ fn do_roundtrip<
     T: TweakableBlockCipher<B>,
     P: Padder<B, T>,
     M: Mix,
-    R: rand::Rng,
+    C: CryptoProvider,
 >(
-    ldt: Ldt<B, T, M>,
+    ldt_enc: LdtEncryptCipher<B, T, M>,
+    ldt_dec: LdtDecryptCipher<B, T, M>,
     padder: &P,
-    rng: &mut R,
+    rng: &mut C::CryptoRng,
     plaintext_len_range: &distributions::Uniform<usize>,
 ) {
-    let len = rng.sample(plaintext_len_range);
-    let plaintext = random_vec(rng, len);
+    let mut rng_rc = StdRng::from_entropy();
+    let len = rng_rc.sample(plaintext_len_range);
+    let plaintext = random_vec::<C>(rng, len);
 
     let mut ciphertext = plaintext.clone();
-    ldt.encrypt(&mut ciphertext, padder).unwrap();
+    ldt_enc.encrypt(&mut ciphertext, padder).unwrap();
 
     assert_eq!(plaintext.len(), ciphertext.len());
     assert_ne!(plaintext, ciphertext);
 
-    ldt.decrypt(&mut ciphertext, padder).unwrap();
+    ldt_dec.decrypt(&mut ciphertext, padder).unwrap();
     assert_eq!(plaintext, ciphertext);
 }

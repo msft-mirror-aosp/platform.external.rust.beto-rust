@@ -23,20 +23,47 @@
 
 //! Defining traits for an LDT specific Tweakable Block Cipher
 
-/// `B` is the block size in bytes.
+use crypto_provider::{CryptoProvider, CryptoRng};
+
+/// The higher level trait defining the single block at a time Tweakable Block Cipher types.
+/// Holds associates types for both the [TweakableBlockCipherEncrypter] and corresponding
+/// [TweakableBlockCipherDecrypter]
 pub trait TweakableBlockCipher<const B: usize> {
+    /// The tweakable block cipher encryption cipher
+    type EncryptionCipher: TweakableBlockCipherEncrypter<B, Key = Self::Key, Tweak = Self::Tweak>;
+
+    /// The tweakable block cipher decryption cipher
+    type DecryptionCipher: TweakableBlockCipherDecrypter<B, Key = Self::Key, Tweak = Self::Tweak>;
+
     /// The tweak type used with encryption/decryption.
     type Tweak: From<[u8; B]>;
 
     /// the tweakable block cipher key type for the tbc
     type Key: TweakableBlockCipherKey;
+}
 
-    /// Create a new tweakable block cipher for ldt from a tbc key
+/// Trait defining a Tweakable Block Cipher, single block at a time, decrypt operation
+/// `B` is the block size in bytes.
+pub trait TweakableBlockCipherEncrypter<const B: usize> {
+    /// The tweakable block cipher key type for the tbc
+    type Key: TweakableBlockCipherKey;
+    /// The tweak type used when encrypting
+    type Tweak: From<[u8; B]>;
+    /// Build a [TweakableBlockCipherEncrypter] with the provided and the provided key.
     fn new(key: &Self::Key) -> Self;
-
     /// Encrypt `block` in place using the specified `tweak`.
     fn encrypt(&self, tweak: Self::Tweak, block: &mut [u8; B]);
+}
 
+/// Trait defining a Tweakable Block Cipher, single block at a time, encrypt operation
+/// `B` is the block size in bytes.
+pub trait TweakableBlockCipherDecrypter<const B: usize> {
+    /// The tweakable block cipher key type for the tbc
+    type Key: TweakableBlockCipherKey;
+    /// The tweak type used when decrypting
+    type Tweak: From<[u8; B]>;
+    /// Build a [TweakableBlockCipherDecrypter] with the provided and the provided key.
+    fn new(key: &Self::Key) -> Self;
     /// Decrypt `block` in place using the specified `tweak`.
     fn decrypt(&self, tweak: Self::Tweak, block: &mut [u8; B]);
 }
@@ -56,11 +83,11 @@ pub trait TweakableBlockCipherKey: Sized {
 /// The array form of two concatenated tweakable block cipher keys.
 pub trait ConcatenatedKeyArray: Sized {
     /// Build a concatenated key from a secure RNG.
-    fn from_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self;
+    fn from_random<C: CryptoProvider>(rng: &mut C::CryptoRng) -> Self;
 }
 
 impl ConcatenatedKeyArray for [u8; 64] {
-    fn from_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self {
+    fn from_random<C: CryptoProvider>(rng: &mut C::CryptoRng) -> Self {
         let mut arr = [0; 64];
         rng.fill(&mut arr);
         arr
@@ -68,7 +95,7 @@ impl ConcatenatedKeyArray for [u8; 64] {
 }
 
 impl ConcatenatedKeyArray for [u8; 128] {
-    fn from_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self {
+    fn from_random<C: CryptoProvider>(rng: &mut C::CryptoRng) -> Self {
         let mut arr = [0; 128];
         rng.fill(&mut arr);
         arr

@@ -60,6 +60,8 @@ pub trait KeyPair: Sized {
     fn sign(&self, msg: &[u8]) -> Self::Signature;
 
     /// Generate an ed25519 keypair from a CSPRNG
+    /// generate is not available in `no-std`
+    #[cfg(feature = "std")]
     fn generate() -> Self;
 
     /// getter function for the Public Key of the key pair
@@ -81,6 +83,12 @@ pub trait Signature: Sized {
 pub trait PublicKey {
     /// the signature type being used by verify
     type Signature: Signature;
+
+    /// Builds this public key from an array of bytes in
+    /// the format yielded by `to_bytes`.
+    fn from_bytes(bytes: [u8; KEY_LENGTH]) -> Result<Self, InvalidBytes>
+    where
+        Self: Sized;
 
     /// Yields the bytes of the public key
     fn to_bytes(&self) -> [u8; KEY_LENGTH];

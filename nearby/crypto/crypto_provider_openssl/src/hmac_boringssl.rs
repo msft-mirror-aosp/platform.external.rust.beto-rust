@@ -97,3 +97,15 @@ impl<const N: usize, H: Hash<N>> crypto_provider::hmac::Hmac<N> for Hmac<H> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Openssl;
+    use core::marker::PhantomData;
+    use crypto_provider::hmac::testing::*;
+
+    #[apply(hmac_test_cases)]
+    fn hmac_tests(testcase: CryptoProviderTestCase<Openssl>) {
+        testcase(PhantomData);
+    }
+}
