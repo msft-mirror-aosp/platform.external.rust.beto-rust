@@ -18,8 +18,8 @@ use crypto_provider::CryptoProvider;
 use rand::{rngs::StdRng, SeedableRng as _};
 use std::{collections::HashSet, mem};
 use ukey2_rs::{
-    CompletedHandshake, ErrorHandler, HandshakeImplementation, StateMachine, Ukey2Client,
-    Ukey2ClientStage1, Ukey2Server, Ukey2ServerStage1, Ukey2ServerStage2,
+    CompletedHandshake, HandshakeImplementation, StateMachine, Ukey2Client, Ukey2ClientStage1,
+    Ukey2Server, Ukey2ServerStage1, Ukey2ServerStage2,
 };
 
 #[derive(Debug)]
@@ -37,61 +37,84 @@ pub enum HandleMessageError {
     BadMessage,
 }
 
-// TODO docs
+/// Implements UKEY2 and produces a [`D2DConnectionContextV1`].
+/// This class should be kept compatible with the Java and C++ implementations in
+/// <https://github.com/google/ukey2>.
+///
+/// For usage examples, see `ukey2_shell`. This file contains a shell exercising
+/// both the initiator and responder handshake roles.
 pub trait D2DHandshakeContext<R = rand::rngs::StdRng>: Send
 where
     R: rand::RngCore + rand::CryptoRng + rand::SeedableRng + Send,
 {
+    /// Tells the caller whether the handshake has completed or not. If the handshake is complete,
+    /// the caller may call [`to_connection_context`][Self::to_connection_context] to obtain a
+    /// connection context.
+    ///
+    /// Returns true if the handshake is complete, false otherwise.
     fn is_handshake_complete(&self) -> bool;
 
+    /// Constructs the next message that should be sent in the handshake.
+    ///
+    /// Returns the next message or `None` if the handshake is over.
     fn get_next_handshake_message(&self) -> Option<Vec<u8>>;
 
-    fn can_send_payload_in_handshake_message(&self) -> bool;
-
+    /// Parses a handshake message and advances the internal state of the context.
+    ///
+    /// * `handshakeMessage` - message received from the remote end in the handshake
     fn handle_handshake_message(&mut self, message: &[u8]) -> Result<(), HandleMessageError>;
 
+    /// Creates a [`D2DConnectionContextV1`] using the results of the handshake. May only be called
+    /// if [`is_handshake_complete`][Self::is_handshake_complete] returns true. Before trusting the
+    /// connection, callers should check that `to_completed_handshake().auth_string()` matches on
+    /// the client and server sides first. See the documentation for
+    /// [`to_completed_handshake`][Self::to_completed_handshake].
     fn to_connection_context(&mut self) -> Result<D2DConnectionContextV1<R>, HandshakeError>;
 
+    /// Returns the [`CompletedHandshake`] using the results from this handshake context. May only
+    /// be called if [`is_handshake_complete`][Self::is_handshake_complete] returns true.
+    /// Callers should verify that the authentication strings from
+    /// `to_completed_handshake().auth_string()` matches on the server and client sides before
+    /// trying to create a connection context. This authentication string verification needs to be
+    /// done out-of-band, either by displaying the string to the user, or verified by some other
+    /// secure means.
     fn to_completed_handshake(&self) -> Result<&CompletedHandshake, HandshakeError>;
 }
 
-enum InitiatorState<C: CryptoProvider, E: ErrorHandler> {
-    Stage1(Ukey2ClientStage1<C, E>),
+enum InitiatorState<C: CryptoProvider> {
+    Stage1(Ukey2ClientStage1<C>),
     Complete(Ukey2Client),
     /// If the initiator enters into an invalid state, e.g. by receiving invalid input.
     /// Also a momentary placeholder while swapping out states.
     Invalid,
 }
 
-pub struct InitiatorD2DHandshakeContext<C: CryptoProvider, E: ErrorHandler, R = rand::rngs::StdRng>
+/// Implementation of [`D2DHandshakeContext`] for the initiator (a.k.a the client).
+pub struct InitiatorD2DHandshakeContext<C: CryptoProvider, R = rand::rngs::StdRng>
 where
     R: rand::RngCore + rand::CryptoRng + rand::SeedableRng + Send,
 {
-    state: InitiatorState<C, E>,
+    state: InitiatorState<C>,
     rng: R,
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> InitiatorD2DHandshakeContext<C, E, rand::rngs::StdRng> {
-    pub fn new(handshake_impl: HandshakeImplementation, error_logger: E) -> Self {
-        Self::new_impl(
-            handshake_impl,
-            error_logger,
-            rand::rngs::StdRng::from_entropy(),
-        )
+impl<C: CryptoProvider> InitiatorD2DHandshakeContext<C, rand::rngs::StdRng> {
+    pub fn new(handshake_impl: HandshakeImplementation) -> Self {
+        Self::new_impl(handshake_impl, rand::rngs::StdRng::from_entropy())
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler, R> InitiatorD2DHandshakeContext<C, E, R>
+impl<C: CryptoProvider, R> InitiatorD2DHandshakeContext<C, R>
 where
     R: rand::RngCore + rand::CryptoRng + rand::SeedableRng + Send,
 {
+    // Used for testing / fuzzing only.
     #[doc(hidden)]
-    pub fn new_impl(handshake_impl: HandshakeImplementation, error_logger: E, mut rng: R) -> Self {
+    pub fn new_impl(handshake_impl: HandshakeImplementation, mut rng: R) -> Self {
         let client = Ukey2ClientStage1::from(
             &mut rng,
             D2DConnectionContextV1::<StdRng>::NEXT_PROTOCOL_IDENTIFIER.to_owned(),
             handshake_impl,
-            error_logger,
         );
         Self {
             state: InitiatorState::Stage1(client),
@@ -100,8 +123,7 @@ where
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler, R> D2DHandshakeContext<R>
-    for InitiatorD2DHandshakeContext<C, E, R>
+impl<C: CryptoProvider, R> D2DHandshakeContext<R> for InitiatorD2DHandshakeContext<C, R>
 where
     R: rand::RngCore + rand::CryptoRng + rand::SeedableRng + Send,
 {
@@ -120,10 +142,6 @@ where
             InitiatorState::Invalid => None,
         }?;
         Some(next_msg)
-    }
-
-    fn can_send_payload_in_handshake_message(&self) -> bool {
-        false
     }
 
     fn handle_handshake_message(&mut self, message: &[u8]) -> Result<(), HandleMessageError> {
@@ -165,39 +183,37 @@ where
     }
 }
 
-enum ServerState<C: CryptoProvider, E: ErrorHandler> {
-    Stage1(Ukey2ServerStage1<C, E>),
-    Stage2(Ukey2ServerStage2<C, E>),
+enum ServerState<C: CryptoProvider> {
+    Stage1(Ukey2ServerStage1<C>),
+    Stage2(Ukey2ServerStage2<C>),
     Complete(Ukey2Server),
     /// If the initiator enters into an invalid state, e.g. by receiving invalid input.
     /// Also a momentary placeholder while swapping out states.
     Invalid,
 }
 
-pub struct ServerD2DHandshakeContext<C: CryptoProvider, E: ErrorHandler, R = rand::rngs::StdRng>
+/// Implementation of [`D2DHandshakeContext`] for the server.
+pub struct ServerD2DHandshakeContext<C: CryptoProvider, R = rand::rngs::StdRng>
 where
     R: rand::Rng + rand::SeedableRng + rand::CryptoRng + Send,
 {
-    state: ServerState<C, E>,
+    state: ServerState<C>,
     rng: R,
 }
 
-impl<C: CryptoProvider, E: ErrorHandler> ServerD2DHandshakeContext<C, E, rand::rngs::StdRng> {
-    pub fn new(handshake_impl: HandshakeImplementation, error_logger: E) -> Self {
-        Self::new_impl(
-            handshake_impl,
-            error_logger,
-            rand::rngs::StdRng::from_entropy(),
-        )
+impl<C: CryptoProvider> ServerD2DHandshakeContext<C, rand::rngs::StdRng> {
+    pub fn new(handshake_impl: HandshakeImplementation) -> Self {
+        Self::new_impl(handshake_impl, rand::rngs::StdRng::from_entropy())
     }
 }
 
-impl<C: CryptoProvider, E: ErrorHandler, R> ServerD2DHandshakeContext<C, E, R>
+impl<C: CryptoProvider, R> ServerD2DHandshakeContext<C, R>
 where
     R: rand::Rng + rand::SeedableRng + rand::CryptoRng + Send,
 {
+    // Used for testing / fuzzing only.
     #[doc(hidden)]
-    pub fn new_impl(handshake_impl: HandshakeImplementation, error_logger: E, rng: R) -> Self {
+    pub fn new_impl(handshake_impl: HandshakeImplementation, rng: R) -> Self {
         Self {
             state: ServerState::Stage1(Ukey2ServerStage1::from(
                 HashSet::from([
@@ -205,17 +221,15 @@ where
                         .to_owned(),
                 ]),
                 handshake_impl,
-                error_logger,
             )),
             rng,
         }
     }
 }
 
-impl<C, E, R> D2DHandshakeContext<R> for ServerD2DHandshakeContext<C, E, R>
+impl<C, R> D2DHandshakeContext<R> for ServerD2DHandshakeContext<C, R>
 where
     C: CryptoProvider,
-    E: ErrorHandler,
     R: rand::Rng + rand::SeedableRng + rand::CryptoRng + Send,
 {
     fn is_handshake_complete(&self) -> bool {
@@ -233,15 +247,6 @@ where
             ServerState::Invalid => None,
         }?;
         Some(next_msg)
-    }
-
-    fn can_send_payload_in_handshake_message(&self) -> bool {
-        match &self.state {
-            ServerState::Stage1(_) => false,
-            ServerState::Stage2(_) => true,
-            ServerState::Complete(_) => true,
-            ServerState::Invalid => false,
-        }
     }
 
     fn handle_handshake_message(&mut self, message: &[u8]) -> Result<(), HandleMessageError> {

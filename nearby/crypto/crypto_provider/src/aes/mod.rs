@@ -25,6 +25,8 @@ pub mod ctr;
 
 #[cfg(feature = "alloc")]
 pub mod cbc;
+#[cfg(feature = "gcm_siv")]
+pub mod gcm_siv;
 
 /// Block size in bytes for AES (and XTS-AES)
 pub const BLOCK_SIZE: usize = 16;
@@ -32,18 +34,35 @@ pub const BLOCK_SIZE: usize = 16;
 /// A single AES block.
 pub type AesBlock = [u8; BLOCK_SIZE];
 
-/// Abstraction around AES to make plugging in different AES implementations easy.
+/// Helper trait to enforce encryption and decryption with the same size key
 pub trait Aes {
-    /// The [AesKey] this cipher uses. See [Aes128Key] and [Aes256Key] for the common AES-128 and
-    /// AES-256 cases.
+    /// The AES key containing the raw bytes used to for key scheduling
     type Key: AesKey;
 
-    /// Build a `Self` from key material.
-    fn new(key: &Self::Key) -> Self;
+    /// The cipher used for encryption
+    type EncryptCipher: AesEncryptCipher<Key = Self::Key>;
 
+    /// the cipher used for decryption
+    type DecryptCipher: AesDecryptCipher<Key = Self::Key>;
+}
+
+/// The base AesCipher trait which describes common operations to both encryption and decryption ciphers
+pub trait AesCipher {
+    /// The type of the key used which holds the raw bytes used in key scheduling
+    type Key: AesKey;
+
+    /// Creates a new cipher from the AesKey
+    fn new(key: &Self::Key) -> Self;
+}
+
+/// An AES cipher used for encrypting blocks
+pub trait AesEncryptCipher: AesCipher {
     /// Encrypt `block` in place.
     fn encrypt(&self, block: &mut AesBlock);
+}
 
+/// An AES cipher used for decrypting blocks
+pub trait AesDecryptCipher: AesCipher {
     /// Decrypt `block` in place.
     fn decrypt(&self, block: &mut AesBlock);
 }
@@ -146,107 +165,115 @@ impl From<[u8; 32]> for Aes256Key {
 /// Module for testing implementations of this crate.
 #[cfg(feature = "testing")]
 pub mod testing {
-    use super::{Aes, Aes128Key, Aes256Key};
+    use super::*;
     pub use crate::testing::prelude::*;
     use core::marker;
     use hex_literal::hex;
     use rstest_reuse::template;
 
     /// Test encryption with AES-128
-    pub fn aes_128_test_encrypt<A: Aes<Key = Aes128Key>>(_marker: marker::PhantomData<A>) {
+    pub fn aes_128_test_encrypt<A: AesEncryptCipher<Key = Aes128Key>>(
+        _marker: marker::PhantomData<A>,
+    ) {
         // https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf F.1.1
         let key: Aes128Key = hex!("2b7e151628aed2a6abf7158809cf4f3c").into();
         let mut block = [0_u8; 16];
-        let aes = A::new(&key);
+        let enc_cipher = A::new(&key);
 
         block.copy_from_slice(&hex!("6bc1bee22e409f96e93d7e117393172a"));
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("3ad77bb40d7a3660a89ecaf32466ef97"), block);
 
         block.copy_from_slice(&hex!("ae2d8a571e03ac9c9eb76fac45af8e51"));
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("f5d3d58503b9699de785895a96fdbaaf"), block);
 
         block.copy_from_slice(&hex!("30c81c46a35ce411e5fbc1191a0a52ef"));
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("43b1cd7f598ece23881b00e3ed030688"), block);
 
         block.copy_from_slice(&hex!("f69f2445df4f9b17ad2b417be66c3710"));
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("7b0c785e27e8ad3f8223207104725dd4"), block);
     }
 
     /// Test decryption with AES-128
-    pub fn aes_128_test_decrypt<A: Aes<Key = Aes128Key>>(_marker: marker::PhantomData<A>) {
+    pub fn aes_128_test_decrypt<A: AesDecryptCipher<Key = Aes128Key>>(
+        _marker: marker::PhantomData<A>,
+    ) {
         // https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf F.1.2
         let key: Aes128Key = hex!("2b7e151628aed2a6abf7158809cf4f3c").into();
         let mut block = [0_u8; 16];
-        let aes = A::new(&key);
+        let dec_cipher = A::new(&key);
 
         block.copy_from_slice(&hex!("3ad77bb40d7a3660a89ecaf32466ef97"));
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("6bc1bee22e409f96e93d7e117393172a"), block);
 
         block.copy_from_slice(&hex!("f5d3d58503b9699de785895a96fdbaaf"));
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("ae2d8a571e03ac9c9eb76fac45af8e51"), block);
 
         block.copy_from_slice(&hex!("43b1cd7f598ece23881b00e3ed030688"));
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("30c81c46a35ce411e5fbc1191a0a52ef"), block);
 
         block.copy_from_slice(&hex!("7b0c785e27e8ad3f8223207104725dd4"));
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("f69f2445df4f9b17ad2b417be66c3710"), block);
     }
 
     /// Test encryption with AES-256
-    pub fn aes_256_test_encrypt<A: Aes<Key = Aes256Key>>(_marker: marker::PhantomData<A>) {
+    pub fn aes_256_test_encrypt<A: AesEncryptCipher<Key = Aes256Key>>(
+        _marker: marker::PhantomData<A>,
+    ) {
         // https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf F.1.5
         let key: Aes256Key =
             hex!("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4").into();
         let mut block: [u8; 16];
-        let aes = A::new(&key);
+        let enc_cipher = A::new(&key);
 
         block = hex!("6bc1bee22e409f96e93d7e117393172a");
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("f3eed1bdb5d2a03c064b5a7e3db181f8"), block);
 
         block = hex!("ae2d8a571e03ac9c9eb76fac45af8e51");
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("591ccb10d410ed26dc5ba74a31362870"), block);
 
         block = hex!("30c81c46a35ce411e5fbc1191a0a52ef");
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("b6ed21b99ca6f4f9f153e7b1beafed1d"), block);
 
         block = hex!("f69f2445df4f9b17ad2b417be66c3710");
-        aes.encrypt(&mut block);
+        enc_cipher.encrypt(&mut block);
         assert_eq!(hex!("23304b7a39f9f3ff067d8d8f9e24ecc7"), block);
     }
 
     /// Test decryption with AES-256
-    pub fn aes_256_test_decrypt<A: Aes<Key = Aes256Key>>(_marker: marker::PhantomData<A>) {
+    pub fn aes_256_test_decrypt<A: AesDecryptCipher<Key = Aes256Key>>(
+        _marker: marker::PhantomData<A>,
+    ) {
         // https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf F.1.6
         let key: Aes256Key =
             hex!("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4").into();
         let mut block: [u8; 16];
-        let aes = A::new(&key);
+        let dec_cipher = A::new(&key);
 
         block = hex!("f3eed1bdb5d2a03c064b5a7e3db181f8");
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("6bc1bee22e409f96e93d7e117393172a"), block);
 
         block = hex!("591ccb10d410ed26dc5ba74a31362870");
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("ae2d8a571e03ac9c9eb76fac45af8e51"), block);
 
         block = hex!("b6ed21b99ca6f4f9f153e7b1beafed1d");
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("30c81c46a35ce411e5fbc1191a0a52ef"), block);
 
         block = hex!("23304b7a39f9f3ff067d8d8f9e24ecc7");
-        aes.decrypt(&mut block);
+        dec_cipher.decrypt(&mut block);
         assert_eq!(hex!("f69f2445df4f9b17ad2b417be66c3710"), block);
     }
 
@@ -257,7 +284,7 @@ pub mod testing {
     /// use crypto_provider::aes::testing::*;
     ///
     /// mod tests {
-    ///     #[apply(aes_128_test_cases)]
+    ///     #[apply(aes_128_encrypt_test_cases)]
     ///     fn aes_128_tests(f: CryptoProviderTestCase<MyAes128Impl>) {
     ///         f(MyAes128Impl);
     ///     }
@@ -267,8 +294,29 @@ pub mod testing {
     #[export]
     #[rstest]
     #[case::encrypt(aes_128_test_encrypt)]
+    fn aes_128_encrypt_test_cases<A: AesFactory<Key = Aes128Key>>(
+        #[case] testcase: CryptoProviderTestCase<F>,
+    ) {
+    }
+
+    /// Generates the test cases to validate the AES-128 implementation.
+    /// For example, to test `MyAes128Impl`:
+    ///
+    /// ```
+    /// use crypto_provider::aes::testing::*;
+    ///
+    /// mod tests {
+    ///     #[apply(aes_128_decrypt_test_cases)]
+    ///     fn aes_128_tests(f: CryptoProviderTestCase<MyAes128Impl>) {
+    ///         f(MyAes128Impl);
+    ///     }
+    /// }
+    /// ```
+    #[template]
+    #[export]
+    #[rstest]
     #[case::decrypt(aes_128_test_decrypt)]
-    fn aes_128_test_cases<F: AesFactory<Key = Aes128Key>>(
+    fn aes_128_decrypt_test_cases<F: AesFactory<Key = Aes128Key>>(
         #[case] testcase: CryptoProviderTestCase<F>,
     ) {
     }
@@ -280,7 +328,7 @@ pub mod testing {
     /// use crypto_provider::aes::testing::*;
     ///
     /// mod tests {
-    ///     #[apply(aes_256_test_cases)]
+    ///     #[apply(aes_256_encrypt_test_cases)]
     ///     fn aes_256_tests(f: CryptoProviderTestCase<MyAes256Impl>) {
     ///         f(MyAes256Impl);
     ///     }
@@ -290,8 +338,29 @@ pub mod testing {
     #[export]
     #[rstest]
     #[case::encrypt(aes_256_test_encrypt)]
+    fn aes_256_encrypt_test_cases<F: AesFactory<Key = Aes256Key>>(
+        #[case] testcase: CryptoProviderTestCase<F>,
+    ) {
+    }
+
+    /// Generates the test cases to validate the AES-256 implementation.
+    /// For example, to test `MyAes256Impl`:
+    ///
+    /// ```
+    /// use crypto_provider::aes::testing::*;
+    ///
+    /// mod tests {
+    ///     #[apply(aes_256_decrypt_test_cases)]
+    ///     fn aes_256_tests(f: CryptoProviderTestCase<MyAes256Impl>) {
+    ///         f(MyAes256Impl);
+    ///     }
+    /// }
+    /// ```
+    #[template]
+    #[export]
+    #[rstest]
     #[case::decrypt(aes_256_test_decrypt)]
-    fn aes_256_test_cases<F: AesFactory<Key = Aes256Key>>(
+    fn aes_256_decrypt_test_cases<F: AesFactory<Key = Aes256Key>>(
         #[case] testcase: CryptoProviderTestCase<F>,
     ) {
     }

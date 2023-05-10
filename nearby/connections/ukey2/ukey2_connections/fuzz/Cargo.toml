@@ -35,3 +35,9 @@ name = "fuzz_handshake"
 path = "fuzz_targets/fuzz_handshake.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_from_saved_session"
+path = "fuzz_targets/fuzz_from_saved_session.rs"
+test = false
+doc = false

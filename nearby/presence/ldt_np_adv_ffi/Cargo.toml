@@ -8,27 +8,32 @@ publish = false
 crypto_provider = { path = "../../crypto/crypto_provider" }
 crypto_provider_openssl = {path = "../../crypto/crypto_provider_openssl", optional = true}
 crypto_provider_rustcrypto = {path = "../../crypto/crypto_provider_rustcrypto", optional = true}
+crypto_provider_boringssl = {path = "../../crypto/crypto_provider_boringssl", optional = true}
 ldt = { path = "../ldt" }
 ldt_np_adv = { path = "../ldt_np_adv" }
+np_hkdf = {path = "../np_hkdf"}
 
-zerocopy = "0.6.1"
+cfg-if = "1.0.0"
+lazy_static = { version = "1.4.0"}
+
+# no_std only deps
 libc_alloc = {version = "1.0.4", optional = true }
 panic-abort = { version = "0.3.2", optional = true }
-lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
-spin = "0.9.4"
-rand_chacha = { version = "0.3.1", default-features = false }
-getrandom = "0.2.8"
+spin = {version = "0.9.8", optional = true }
+
+[dev-dependencies]
+rand = "0.8.5"
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+# boringssl and bssl-sys are built as a static lib, so we need to as well
+crate-type = ["staticlib"]
 
 [features]
-default = ["rustcrypto", "std"]
-std = []
-# default to rustcrypto primitives, but use this feature to flip to openssl
-# based implementations, openssl required std library
-openssl = ["std", "dep:crypto_provider_openssl"]
-rustcrypto = ["dep:crypto_provider_rustcrypto"]
+# by default we support no_std and use rustcrypto primitives
+default = ["lazy_static/spin_no_std", "spin", "libc_alloc", "panic-abort", "crypto_provider_rustcrypto"]
+std = ["crypto_provider_rustcrypto", "crypto_provider_rustcrypto/std"]
+openssl = ["crypto_provider_openssl"]
+boringssl = ["crypto_provider_boringssl"]
 
 [profile.release-min-size]
 inherits = "release"
