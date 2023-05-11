@@ -1,4 +1,3 @@
-#![no_std]
 // Copyright 2023 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,7 +10,8 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
+// limitations under the License.'
+#![no_std]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
@@ -46,11 +46,11 @@ pub mod ed25519;
 /// Uber crypto trait which defines the traits for all crypto primitives as associated types
 pub trait CryptoProvider: Clone + Debug + PartialEq + Eq + Send {
     /// The Hkdf type which implements the hkdf trait
-    type HkdfSha256: hkdf::Hkdf + Clone;
+    type HkdfSha256: hkdf::Hkdf;
     /// The Hmac type which implements the hmac trait
     type HmacSha256: hmac::Hmac<32>;
     /// The Hkdf type which implements the hkdf trait
-    type HkdfSha512: hkdf::Hkdf + Clone;
+    type HkdfSha512: hkdf::Hkdf;
     /// The Hmac type which implements the hmac trait
     type HmacSha512: hmac::Hmac<64>;
     /// The AES-CBC-PKCS7 implementation to use
@@ -64,9 +64,9 @@ pub trait CryptoProvider: Clone + Debug + PartialEq + Eq + Send {
     /// The SHA512 hash implementation.
     type Sha512: sha2::Sha512;
     /// Plain AES-128 implementation (without block cipher mode).
-    type Aes128: aes::Aes<Key = aes::Aes128Key>;
+    type Aes128: aes::Aes<Key = Aes128Key>;
     /// Plain AES-256 implementation (without block cipher mode).
-    type Aes256: aes::Aes<Key = aes::Aes256Key>;
+    type Aes256: aes::Aes<Key = Aes256Key>;
     /// AES-128 with CTR block mode
     type AesCtr128: aes::ctr::AesCtr<Key = aes::Aes128Key>;
     /// AES-256 with CTR block mode
@@ -75,10 +75,46 @@ pub trait CryptoProvider: Clone + Debug + PartialEq + Eq + Send {
     /// using SHA-512 (SHA-2) and Curve25519
     type Ed25519: ed25519::Ed25519Provider;
 
+    /// The cryptographically secure random number generator
+    type CryptoRng: CryptoRng;
+
     /// Compares the two given slices, in constant time, and returns true if they are equal.
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool;
 }
 
+/// Wrapper to a cryptographically secure pseudo random number generator
+pub trait CryptoRng {
+    /// Returns an instance of the rng
+    fn new() -> Self;
+
+    /// Return the next random u64
+    fn next_u64(&mut self) -> u64;
+
+    /// Fill dest with random data
+    fn fill(&mut self, dest: &mut [u8]);
+
+    /// Generate a random byte
+    fn gen<U8>(&mut self) -> u8 {
+        let mut arr = [0u8; 1];
+        self.fill(&mut arr);
+        arr[0]
+    }
+}
+
+/// If impls want to opt out of passing a Rng they can simply use `()` for the Rng associated type
+impl CryptoRng for () {
+    fn new() -> Self {}
+
+    fn next_u64(&mut self) -> u64 {
+        unimplemented!()
+    }
+
+    fn fill(&mut self, _dest: &mut [u8]) {
+        unimplemented!()
+    }
+}
+
+use crate::aes::{Aes128Key, Aes256Key};
 #[cfg(feature = "testing")]
 pub use rstest_reuse;
 

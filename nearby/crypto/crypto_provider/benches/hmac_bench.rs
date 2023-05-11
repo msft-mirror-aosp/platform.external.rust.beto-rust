@@ -15,17 +15,16 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use crypto_provider::hmac::Hmac;
-use crypto_provider::CryptoProvider;
+use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_openssl::Openssl;
 use crypto_provider_rustcrypto::RustCrypto;
-
-use rand::{Rng, SeedableRng};
+use rand_ext::random_bytes;
 
 // simple benchmark, which creates a new hmac, updates once, then finalizes
 fn hmac_sha256_operations<C: CryptoProvider>(c: &mut Criterion) {
-    let mut rng = rand::rngs::StdRng::from_entropy();
-    let key: [u8; 32] = rand_ext::random_bytes(&mut rng);
-    let update_data: [u8; 16] = rand_ext::random_bytes(&mut rng);
+    let mut rng = C::CryptoRng::new();
+    let key: [u8; 32] = rand_ext::random_bytes::<32, C>(&mut rng);
+    let update_data: [u8; 16] = rand_ext::random_bytes::<16, C>(&mut rng);
 
     c.bench_function("bench for hmac sha256 single update", |b| {
         b.iter(|| {
@@ -37,9 +36,9 @@ fn hmac_sha256_operations<C: CryptoProvider>(c: &mut Criterion) {
 }
 
 fn hmac_sha512_operations<C: CryptoProvider>(c: &mut Criterion) {
-    let mut rng = rand::rngs::StdRng::from_entropy();
-    let key: [u8; 64] = rand_ext::random_bytes(&mut rng);
-    let update_data: [u8; 16] = rng.gen();
+    let mut rng = C::CryptoRng::new();
+    let key: [u8; 64] = rand_ext::random_bytes::<64, C>(&mut rng);
+    let update_data: [u8; 16] = random_bytes::<16, C>(&mut rng);
 
     c.bench_function("bench for hmac sha512 single update", |b| {
         b.iter(|| {

@@ -32,40 +32,36 @@ public class D2DHandshakeContext {
 
     private static native boolean is_handshake_complete(long context_ptr) throws BadHandleException;
 
-    private static native long create_context(boolean is_client, Ukey2Logger logger);
+    private static native long create_context(boolean is_client);
 
     private static native byte[] get_next_handshake_message(long context_ptr) throws BadHandleException;
 
-    private static native boolean can_send_payload_in_handshake_message(long context_ptr) throws BadHandleException;
-
-    private static native byte[] parse_handshake_message(long context_ptr, byte[] message) throws BadHandleException, HandshakeException;
+    private static native void parse_handshake_message(long context_ptr, byte[] message) throws BadHandleException, HandshakeException;
 
     private static native byte[] get_verification_string(long context_ptr, int length) throws BadHandleException, HandshakeException;
 
     private static native long to_connection_context(long context_ptr) throws HandshakeException;
 
-    public D2DHandshakeContext(@Nonnull Role role, @Nonnull Ukey2Logger logger) {
-        this.context_ptr = create_context(role == Role.Initiator, logger);
+    public D2DHandshakeContext(@Nonnull Role role) {
+        this.context_ptr = create_context(role == Role.Initiator);
     }
 
     /**
      * Convenience constructor that creates a UKEY2 D2DHandshakeContext for the initiator role.
      *
-     * @param logger       - The {@link Ukey2Logger} instance to log any debug/error messages to.
      * @return a D2DHandshakeContext for the role of initiator in the handshake.
      */
-    public static D2DHandshakeContext forInitiator(@Nonnull Ukey2Logger logger) {
-        return new D2DHandshakeContext(Role.Initiator, logger);
+    public static D2DHandshakeContext forInitiator() {
+        return new D2DHandshakeContext(Role.Initiator);
     }
 
     /**
      * Convenience constructor that creates a UKEY2 D2DHandshakeContext for the initiator role.
      *
-     * @param logger       - The {@link Ukey2Logger} instance to log any debug/error messages to.
      * @return a D2DHandshakeContext for the role of responder/server in the handshake.
      */
-    public static D2DHandshakeContext forResponder(@Nonnull Ukey2Logger logger) {
-        return new D2DHandshakeContext(Role.Responder, logger);
+    public static D2DHandshakeContext forResponder() {
+        return new D2DHandshakeContext(Role.Responder);
     }
 
     /**
@@ -87,22 +83,12 @@ public class D2DHandshakeContext {
     }
 
     /**
-     * Indicates if extra information can be shared during the handshake at the current stage.
-     *
-     * @return if we can send extra informatino to the responder over the handshake.
-     */
-    public boolean canSendPayloadInHandshakeMessage() throws BadHandleException {
-        return can_send_payload_in_handshake_message(context_ptr);
-    }
-
-    /**
-     * Parses the handshake message and returns the encoded payload if any.
+     * Parses the handshake message.
      *
      * @param message - handshake message from the other side.
-     * @return - extra information, if any, should correspond with {@link D2DHandshakeContext#canSendPayloadInHandshakeMessage}
      */
-    public @Nonnull byte[] parseHandshakeMessage(@Nonnull byte[] message) throws BadHandleException, HandshakeException {
-        return parse_handshake_message(context_ptr, message);
+    public @Nonnull void parseHandshakeMessage(@Nonnull byte[] message) throws BadHandleException, HandshakeException {
+        parse_handshake_message(context_ptr, message);
     }
 
     /**

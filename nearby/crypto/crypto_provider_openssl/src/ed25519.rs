@@ -90,6 +90,13 @@ pub struct PublicKey(Vec<u8>);
 impl crypto_provider::ed25519::PublicKey for PublicKey {
     type Signature = Signature;
 
+    fn from_bytes(bytes: [u8; KEY_LENGTH]) -> Result<Self, InvalidBytes>
+    where
+        Self: Sized,
+    {
+        Ok(PublicKey(bytes.to_vec()))
+    }
+
     fn to_bytes(&self) -> [u8; KEY_LENGTH] {
         //Should be length 32
         self.0.as_slice().try_into().unwrap()

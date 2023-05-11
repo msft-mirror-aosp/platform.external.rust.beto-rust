@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use protoc_rust::Customize;
+use protobuf_codegen::Customize;
 
 fn main() {
-    let out_dir = std::env::var("OUT_DIR").unwrap() + "/proto";
-    std::fs::create_dir_all(&out_dir).unwrap();
-    protoc_rust::Codegen::new()
+    protobuf_codegen::Codegen::new()
+        .protoc()
         // All inputs and imports from the inputs must reside in `includes` directories.
         .includes(["proto"])
         // Inputs must reside in some of include paths.
@@ -25,11 +24,7 @@ fn main() {
         .input("proto/securemessage.proto")
         .input("proto/securegcm.proto")
         .input("proto/device_to_device_messages.proto")
-        .customize(Customize {
-            gen_mod_rs: Some(true),
-            ..Default::default()
-        })
-        .out_dir(out_dir)
-        .run()
-        .unwrap();
+        .customize(Customize::default().gen_mod_rs(true))
+        .cargo_out_dir("proto")
+        .run_from_script()
 }

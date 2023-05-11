@@ -36,11 +36,14 @@ pub trait EphemeralSecret<C: Curve>: Send {
     /// The associated ECDH provider.
     type Impl: EcdhProvider<C>;
 
-    /// The error type assocated with this ephemeral secret implementation.
+    /// The error type associated with this ephemeral secret implementation.
     type Error: Debug;
 
+    /// The random number generator to be used for generating a secret
+    type Rng: crate::CryptoRng;
+
     /// Generates a new random ephemeral secret.
-    fn generate_random<R: rand::Rng + rand::CryptoRng>(rng: &mut R) -> Self;
+    fn generate_random(rng: &mut Self::Rng) -> Self;
 
     /// Returns the bytes of the public key for this ephemeral secret that is suitable for sending
     /// over the wire for key exchange.

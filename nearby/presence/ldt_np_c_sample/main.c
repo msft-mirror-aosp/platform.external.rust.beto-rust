@@ -41,11 +41,10 @@ int main()
         {12, 15}
     };
 
-    // Create handle
-    NpLdtHandle handle = NpLdtCreate(*key_seed, *known_hmac);
-    if (handle == 0)
+    // Create handle for encryption
+    NpLdtEncryptHandle enc_handle = NpLdtEncryptCreate(*key_seed);
+    if (enc_handle.handle == 0)
     {
-        printf("Invalid alignment\n");
         return -1;
     }
 
@@ -57,7 +56,7 @@ int main()
     printf("\n");
 
     // Encrypt the data and print it
-    NP_LDT_RESULT result = NpLdtEncrypt(handle, plaintext, 24, salt);
+    NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, plaintext, 24, salt);
     if (result)
     {
         printf("Error in NpLdtEncrypt: %d\n", result);
@@ -69,8 +68,15 @@ int main()
         printf("%X ", *(plaintext + i));
     printf("\n");
 
+    // Create handle for encryption
+    NpLdtDecryptHandle dec_handle = NpLdtDecryptCreate(*key_seed, *known_hmac);
+    if (enc_handle.handle == 0)
+    {
+        return -1;
+    }
+
     // Decrypt the data and print its bytes
-    result = NpLdtDecryptAndVerify(handle, plaintext, 24, salt);
+    result = NpLdtDecryptAndVerify(dec_handle, plaintext, 24, salt);
     if (result)
     {
         printf("Error in NpDecryptAndVerify: %d\n", result);
@@ -83,7 +89,15 @@ int main()
     printf("\n");
 
     // Call NpLdtClose to free resources
-    result = NpLdtClose(handle);
+    result = NpLdtEncryptClose(enc_handle);
+    if (result)
+    {
+        printf("Error in NpLdtClose: %d\n", result);
+        return result;
+    }
+
+    // Call NpLdtClose to free resources
+    result = NpLdtDecryptClose(dec_handle);
     if (result)
     {
         printf("Error in NpLdtClose: %d\n", result);

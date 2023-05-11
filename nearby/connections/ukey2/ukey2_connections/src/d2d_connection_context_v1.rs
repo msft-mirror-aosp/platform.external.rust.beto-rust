@@ -29,6 +29,12 @@ use ukey2_rs::CompletedHandshake;
 
 use crate::{crypto_utils, java_utils};
 
+/// Version of the D2D protocol implementation (the connection encryption part after the UKEY2
+/// handshake). V0 is a half-duplex communication, with the key and sequence number shared between
+/// both sides, and V1 is a full-duplex communication, with separate keys and sequence numbers
+/// for encoding and decoding.
+///
+/// Only V1 is implemented by this library.
 const PROTOCOL_VERSION: u8 = 1;
 /// Number of bytes in the key
 pub(crate) const AES_256_KEY_SIZE: usize = 32;
@@ -38,7 +44,7 @@ const ENCRYPTION_SALT: [u8; 32] = [
     0x73, 0xe5, 0x37, 0xf2, 0x42, 0x74, 0x05, 0xfa, 0x23, 0x61, 0x0a, 0x4b, 0xe6, 0x57, 0x64, 0x2e,
 ];
 
-/// Salt for Sha256 for getSessionUnique()
+/// Salt for Sha256 for [`get_session_unique`][D2DConnectionContextV1::get_session_unique].
 /// SHA-256 of "D2D"
 const SESSION_UNIQUE_SALT: [u8; 32] = [
     0x82, 0xAA, 0x55, 0xA0, 0xD3, 0x97, 0xF8, 0x83, 0x46, 0xCA, 0x1C, 0xEE, 0x8D, 0x39, 0x09, 0xB9,
@@ -71,22 +77,23 @@ struct RustDeviceToDeviceMessage {
 
 // Static utility functions for dealing with DeviceToDeviceMessage.
 fn create_device_to_device_message(msg: RustDeviceToDeviceMessage) -> Vec<u8> {
-    let d2d_message = {
-        let mut proto_msg = DeviceToDeviceMessage::default();
-        proto_msg.set_message(msg.message);
-        proto_msg.set_sequence_number(msg.sequence_num);
-        proto_msg
+    let d2d_message = DeviceToDeviceMessage {
+        message: Some(msg.message),
+        sequence_number: Some(msg.sequence_num),
+        ..Default::default()
     };
     d2d_message.write_to_bytes().unwrap()
 }
 
 fn unwrap_device_to_device_message(
     message: &[u8],
-) -> Result<RustDeviceToDeviceMessage, DeserializeError> {
+) -> Result<RustDeviceToDeviceMessage, DecodeError> {
     let result =
-        DeviceToDeviceMessage::parse_from_bytes(message).map_err(|_| DeserializeError::BadData)?;
-    let msg = result.get_message().to_vec();
-    let seq_num = result.get_sequence_number();
+        DeviceToDeviceMessage::parse_from_bytes(message).map_err(|_| DecodeError::BadData)?;
+    let (msg, seq_num) = result
+        .message
+        .zip(result.sequence_number)
+        .ok_or(DecodeError::BadData)?;
     Ok(RustDeviceToDeviceMessage {
         sequence_num: seq_num,
         message: msg,
@@ -100,6 +107,9 @@ fn derive_aes256_key<C: CryptoProvider>(initial_key: &[u8], purpose: &[u8]) -> A
     buf
 }
 
+/// Implementation of the UKEY2 connection protocol, also known as version 1 of the D2D protocol. In
+/// this  version, communication is fully duplex, as separate keys and sequence numbers are used for
+/// encoding and decoding.
 #[derive(Debug)]
 pub struct D2DConnectionContextV1<R = rand::rngs::StdRng>
 where
@@ -109,20 +119,31 @@ where
     encode_sequence_num: i32,
     encode_key: Aes256Key,
     decode_key: Aes256Key,
+    encryption_key: Aes256Key,
+    decryption_key: Aes256Key,
+    signing_key: Aes256Key,
+    verify_key: Aes256Key,
     rng: R,
 }
 
+/// Error type for [`decode_message_from_peer`][D2DConnectionContextV1::decode_message_from_peer].
 #[derive(Debug)]
 pub enum DecodeError {
+    /// The data input being decoded does not match the expected input format.
     BadData,
+    /// The sequence number of the incoming message does not match the expected number. This means
+    /// messages has been lost, received out of order, or duplicates have been received.
     BadSequenceNumber,
 }
 
+/// Error type for [`from_saved_session`][D2DConnectionContextV1::from_saved_session].
 #[derive(Debug, PartialEq, Eq)]
 pub enum DeserializeError {
+    /// The input data is not a valid protobuf message and cannot be deserialized.
     BadData,
-    // For proto struct
+    /// The data length for the input data or some of its fields do not match the required length.
     BadDataLength,
+    /// The protocol version indicated in the input data is not expected by this implementation.
     BadProtocolVersion,
 }
 
@@ -136,8 +157,8 @@ impl std::fmt::Display for DecodeError {
 }
 
 impl D2DConnectionContextV1<rand::rngs::StdRng> {
-    pub fn from_saved_session(session: &[u8]) -> Result<Self, DeserializeError> {
-        Self::from_saved_session_with_rng(session, rand::rngs::StdRng::from_entropy())
+    pub fn from_saved_session<C: CryptoProvider>(session: &[u8]) -> Result<Self, DeserializeError> {
+        Self::from_saved_session_with_rng::<C>(session, rand::rngs::StdRng::from_entropy())
     }
 }
 
@@ -147,18 +168,26 @@ where
 {
     pub(crate) const NEXT_PROTOCOL_IDENTIFIER: &'static str = "AES_256_CBC-HMAC_SHA256";
 
-    pub fn new(
+    pub fn new<C: CryptoProvider>(
         decode_sequence_num: i32,
         encode_sequence_num: i32,
         encode_key: Aes256Key,
         decode_key: Aes256Key,
         rng: R,
     ) -> Self {
+        let encryption_key = derive_aes256_key::<C>(&encode_key, b"ENC:2");
+        let decryption_key = derive_aes256_key::<C>(&decode_key, b"ENC:2");
+        let signing_key = derive_aes256_key::<C>(&encode_key, b"SIG:1");
+        let verify_key = derive_aes256_key::<C>(&decode_key, b"SIG:1");
         D2DConnectionContextV1 {
             decode_sequence_num,
             encode_sequence_num,
             encode_key,
             decode_key,
+            encryption_key,
+            decryption_key,
+            signing_key,
+            verify_key,
             rng,
         }
     }
@@ -171,7 +200,7 @@ where
             .next_protocol_secret::<C>()
             .derive_array::<AES_256_KEY_SIZE>()
             .unwrap();
-        D2DConnectionContextV1::new(
+        D2DConnectionContextV1::new::<C>(
             0,
             0,
             encryption_key::<32, C>(&next_protocol_secret, HKDF_INFO_KEY_INITIATOR).unwrap(),
@@ -188,7 +217,7 @@ where
             .next_protocol_secret::<C>()
             .derive_array::<AES_256_KEY_SIZE>()
             .unwrap();
-        D2DConnectionContextV1::new(
+        D2DConnectionContextV1::new::<C>(
             0,
             0,
             encryption_key::<32, C>(&next_protocol_secret, HKDF_INFO_KEY_RESPONDER).unwrap(),
@@ -197,6 +226,23 @@ where
         )
     }
 
+    /// Creates a saved session that can later be used for resumption. The session data may be
+    /// persisted, but it must be stored in a secure location.
+    ///
+    /// Returns the serialized saved session, suitable for resumption using
+    /// [`from_saved_session`][Self::from_saved_session].
+    ///
+    /// Structure of saved session is:
+    ///
+    /// ```text
+    /// +---------------------------------------------------------------------------+
+    /// | 1 Byte  |      4 Bytes      |      4 Bytes      |  32 Bytes  |  32 Bytes  |
+    /// +---------------------------------------------------------------------------+
+    /// | Version | encode seq number | decode seq number | encode key | decode key |
+    /// +---------------------------------------------------------------------------+
+    /// ```
+    ///
+    /// The sequence numbers are represented in big-endian.
     pub fn save_session(&self) -> Vec<u8> {
         let mut ret: Vec<u8> = vec![];
         ret.push(PROTOCOL_VERSION);
@@ -207,35 +253,51 @@ where
         ret
     }
 
-    pub(crate) fn from_saved_session_with_rng(
+    pub(crate) fn from_saved_session_with_rng<C: CryptoProvider>(
         session: &[u8],
         rng: R,
     ) -> Result<Self, DeserializeError> {
-        // TODO parse with nom to ensure safety
         if session.len() != 73 {
             return Err(DeserializeError::BadDataLength);
         }
-        let protocol_version = session[0];
-        if protocol_version != PROTOCOL_VERSION {
-            return Err(DeserializeError::BadProtocolVersion);
-        }
-        let encode_sequence_num = i32::from_be_bytes(session[1..5].try_into().unwrap());
-        let decode_sequence_num = i32::from_be_bytes(session[5..9].try_into().unwrap());
-        let encode_key = session[9..41]
-            .try_into()
-            .expect("Selecting exactly 32 bytes");
-        let decode_key = session[41..73]
-            .try_into()
-            .expect("Selecting exactly 32 bytes");
-        Ok(Self {
+        let (rem, _) = nom::bytes::complete::tag(PROTOCOL_VERSION.to_be_bytes())(session)
+            .map_err(|_: nom::Err<nom::error::Error<_>>| DeserializeError::BadProtocolVersion)?;
+
+        let (_, (encode_sequence_num, decode_sequence_num, encode_key, decode_key)) =
+            nom::combinator::all_consuming(nom::sequence::tuple::<_, _, nom::error::Error<_>, _>(
+                (
+                    nom::number::complete::be_i32,
+                    nom::number::complete::be_i32,
+                    nom::combinator::map_res(
+                        nom::bytes::complete::take(32_usize),
+                        TryInto::<Aes256Key>::try_into,
+                    ),
+                    nom::combinator::map_res(
+                        nom::bytes::complete::take(32_usize),
+                        TryInto::<Aes256Key>::try_into,
+                    ),
+                ),
+            ))(rem)
+            // This should always succeed since all of the parsers above are valid over the entire
+            // [u8] space, and we already checked the length at the start.
+            .expect("Saved session parsing should succeed");
+        Ok(Self::new::<C>(
             encode_sequence_num,
             decode_sequence_num,
             encode_key,
             decode_key,
             rng,
-        })
+        ))
     }
 
+    /// Once initiator and responder have exchanged public keys, use this method to encrypt and
+    /// sign a payload. Both initiator and responder devices can use this message.
+    ///
+    /// * `payload` - The payload that should be encrypted.
+    /// * `associated_data` - Optional data that is not included in the payload but is included in
+    ///       the calculation of the signature for this message. Note that the *size* (length in
+    ///       bytes) of the associated data will be sent in the *UNENCRYPTED* header information,
+    ///       even if you are using encryption.
     pub fn encode_message_to_peer<C: CryptoProvider, A: AsRef<[u8]>>(
         &mut self,
         payload: &[u8],
@@ -246,45 +308,56 @@ where
             message: payload.to_vec(),
             sequence_num: self.get_sequence_number_for_encoding(),
         });
-        let encrypt_key = derive_aes256_key::<C>(&self.encode_key, b"ENC:2");
         let (ciphertext, iv) = crypto_utils::encrypt::<_, C::AesCbcPkcs7Padded>(
-            &encrypt_key,
+            &self.encryption_key,
             message.as_slice(),
             &mut self.rng,
         );
-        let mut metadata: GcmMetadata = GcmMetadata::default();
-        metadata.set_field_type(Type::DEVICE_TO_DEVICE_MESSAGE);
-        // As specified in
-        // google3/third_party/ukey2/src/main/java/com/google/security/cryptauth/lib/securegcm/SecureGcmConstants.java
-        metadata.set_version(1);
-        let mut header: Header = Header::default();
-        header.set_signature_scheme(SigScheme::HMAC_SHA256);
-        header.set_encryption_scheme(EncScheme::AES_256_CBC);
-        header.set_iv(iv.to_vec());
-        header.set_public_metadata(metadata.write_to_bytes().unwrap());
-        if let Some(assoc_data) = associated_data.as_ref() {
-            header.set_associated_data_length(assoc_data.as_ref().len() as u32)
-        }
-        let mut header_and_body = HeaderAndBody::default();
-        header_and_body.set_header(header);
-        header_and_body.set_body(ciphertext);
+        let metadata = GcmMetadata {
+            type_: Some(Type::DEVICE_TO_DEVICE_MESSAGE.into()),
+            // As specified in
+            // google3/third_party/ukey2/src/main/java/com/google/security/cryptauth/lib/securegcm/SecureGcmConstants.java
+            version: Some(1),
+            ..Default::default()
+        };
+        let header = Header {
+            signature_scheme: Some(SigScheme::HMAC_SHA256.into()),
+            encryption_scheme: Some(EncScheme::AES_256_CBC.into()),
+            iv: Some(iv.to_vec()),
+            public_metadata: Some(metadata.write_to_bytes().unwrap()),
+            associated_data_length: associated_data.as_ref().map(|d| d.as_ref().len() as u32),
+            ..Default::default()
+        };
+        let header_and_body = HeaderAndBody {
+            header: Some(header).into(),
+            body: Some(ciphertext),
+            ..Default::default()
+        };
         let header_and_body_bytes = header_and_body.write_to_bytes().unwrap();
 
         // add sha256 MAC
-        let sign_key = derive_aes256_key::<C>(&self.encode_key, b"SIG:1");
-        let mut hmac = C::HmacSha256::new_from_slice(&sign_key).unwrap();
+        let mut hmac = C::HmacSha256::new_from_slice(&self.signing_key).unwrap();
         hmac.update(header_and_body_bytes.as_slice());
         if let Some(associated_data_vec) = associated_data.as_ref() {
             hmac.update(associated_data_vec.as_ref())
         }
         let result_mac = hmac.finalize().to_vec();
 
-        let mut secure_message = SecureMessage::default();
-        secure_message.set_header_and_body(header_and_body_bytes);
-        secure_message.set_signature(result_mac);
+        let secure_message = SecureMessage {
+            header_and_body: Some(header_and_body_bytes),
+            signature: Some(result_mac),
+            ..Default::default()
+        };
         secure_message.write_to_bytes().unwrap()
     }
 
+    /// Once `InitiatorHello` and `ResponderHello` (and payload) are exchanged, use this method to
+    /// decrypt and verify a message received from the other device. Both initiator and responder
+    /// devices can use this message.
+    ///
+    /// * `message` - the message that should be encrypted.
+    /// * `associated_data` - Optional associated data that must match what the sender provided. See
+    ///       the documentation on [`encode_message_to_peer`][Self::encode_message_to_peer].
     pub fn decode_message_from_peer<C: CryptoProvider, A: AsRef<[u8]>>(
         &mut self,
         payload: &[u8],
@@ -293,39 +366,37 @@ where
         // first confirm that the payload MAC matches the header_and_body
         let message = SecureMessage::parse_from_bytes(payload).map_err(|_| DecodeError::BadData)?;
         let payload_mac: [u8; 32] = message
-            .get_signature()
-            .try_into()
-            .map_err(|_| DecodeError::BadData)?;
-        let payload = message.get_header_and_body();
-        let verify_key = derive_aes256_key::<C>(&self.decode_key, b"SIG:1");
-        let mut hmac = C::HmacSha256::new_from_slice(&verify_key).unwrap();
-        hmac.update(payload);
+            .signature
+            .and_then(|signature| signature.try_into().ok())
+            .ok_or(DecodeError::BadData)?;
+        let payload = message.header_and_body.ok_or(DecodeError::BadData)?;
+        let mut hmac = C::HmacSha256::new_from_slice(&self.verify_key).unwrap();
+        hmac.update(&payload);
         if let Some(associated_data) = associated_data.as_ref() {
             hmac.update(associated_data.as_ref())
         }
         hmac.verify(payload_mac).map_err(|_| DecodeError::BadData)?;
-        let payload = HeaderAndBody::parse_from_bytes(payload).map_err(|_| DecodeError::BadData)?;
-        let associated_data_len = payload.header.as_ref().and_then(|header| {
-            if header.has_associated_data_length() {
-                Some(header.get_associated_data_length())
-            } else {
-                None
-            }
-        });
+        let payload =
+            HeaderAndBody::parse_from_bytes(&payload).map_err(|_| DecodeError::BadData)?;
+        let associated_data_len = payload
+            .header
+            .as_ref()
+            .and_then(|header| header.associated_data_length);
         if associated_data_len != associated_data.map(|ad| ad.as_ref().len() as u32) {
             return Err(DecodeError::BadData);
         }
         let iv: AesCbcIv = payload
-            .get_header()
-            .get_iv()
-            .try_into()
-            .map_err(|_| DecodeError::BadData)?;
-        let decode_key = derive_aes256_key::<C>(&self.decode_key, b"ENC:2");
-        let decrypted =
-            crypto_utils::decrypt::<C::AesCbcPkcs7Padded>(&decode_key, payload.get_body(), &iv)
-                .map_err(|_| DecodeError::BadData)?;
-        let d2d_message = unwrap_device_to_device_message(decrypted.as_slice())
-            .map_err(|_| DecodeError::BadData)?;
+            .header
+            .as_ref()
+            .and_then(|header| header.iv().try_into().ok())
+            .ok_or(DecodeError::BadData)?;
+        let decrypted = crypto_utils::decrypt::<C::AesCbcPkcs7Padded>(
+            &self.decryption_key,
+            &payload.body.unwrap_or_default(),
+            &iv,
+        )
+        .map_err(|_| DecodeError::BadData)?;
+        let d2d_message = unwrap_device_to_device_message(decrypted.as_slice())?;
         if d2d_message.sequence_num != self.get_sequence_number_for_decoding() + 1 {
             return Err(DecodeError::BadSequenceNumber);
         }
@@ -341,14 +412,19 @@ where
         self.decode_sequence_num += 1;
     }
 
+    /// Returns the last sequence number used to encode a message.
     pub fn get_sequence_number_for_encoding(&self) -> i32 {
         self.encode_sequence_num
     }
 
+    /// Returns the last sequence number used to decode a message.
     pub fn get_sequence_number_for_decoding(&self) -> i32 {
         self.decode_sequence_num
     }
 
+    /// Returns a cryptographic digest (SHA256) of the session keys prepended by the SHA256 hash
+    /// of the ASCII string "D2D". Since the server and client share the same session keys, the
+    /// resulting session unique is also the same.
     pub fn get_session_unique<C: CryptoProvider>(&self) -> Vec<u8> {
         let encode_key_hash = java_utils::hash_code(self.encode_key.as_slice());
         let decode_key_hash = java_utils::hash_code(self.decode_key.as_slice());
