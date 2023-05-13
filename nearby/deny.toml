@@ -82,7 +82,9 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-3-Clause",
     "BSD-2-Clause",
+    "ISC",
     "Unicode-DFS-2016",
+    "OpenSSL",
     "Unlicense"
 ]
 # List of explicitly disallowed licenses
