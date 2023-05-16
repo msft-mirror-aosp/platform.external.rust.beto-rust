@@ -419,7 +419,7 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
                             p256_secret.public_key_bytes(),
                             HandshakeCipher::P256Sha512,
                         )
-                        .unwrap(),
+                        .expect("Output of p256_secret.public_key_bytes should always be valid input for encode_public_key"),
                 ),
                 ..Default::default()
             };

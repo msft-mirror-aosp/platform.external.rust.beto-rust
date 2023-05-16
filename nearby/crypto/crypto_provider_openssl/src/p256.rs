@@ -38,6 +38,8 @@ pub enum Error {
     OpenSslError(ErrorStack),
     /// Unexpected size for the given input.
     WrongSize,
+    /// Invalid input given when creating keys from their byte representations.
+    InvalidInput,
 }
 
 impl From<ErrorStack> for Error {
@@ -51,6 +53,10 @@ impl crypto_provider::p256::P256PublicKey for P256PublicKey {
     type Error = Error;
 
     fn from_sec1_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if bytes == [0] {
+            // Single 0 byte means infinity point.
+            return Err(Error::InvalidInput);
+        }
         let ecgroup = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
         let mut bncontext = BigNumContext::new()?;
         let ecpoint = EcPoint::from_bytes(&ecgroup, bytes, &mut bncontext)?;
@@ -87,8 +93,16 @@ impl crypto_provider::p256::P256PublicKey for P256PublicKey {
             .public_key()
             .affine_coordinates_gfp(&ecgroup, &mut p256x, &mut p256y, &mut bnctx)?;
         Ok((
-            p256x.to_vec().try_into().map_err(|_| Error::WrongSize)?,
-            p256y.to_vec().try_into().map_err(|_| Error::WrongSize)?,
+            p256x
+                .to_vec_padded(32)
+                .map_err(|_| Error::WrongSize)?
+                .try_into()
+                .expect("to_vec_padded(32) should always return vec of length 32"),
+            p256y
+                .to_vec_padded(32)
+                .map_err(|_| Error::WrongSize)?
+                .try_into()
+                .expect("to_vec_padded(32) should always return vec of length 32"),
         ))
     }
 }
