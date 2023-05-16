@@ -194,6 +194,17 @@ pub mod testing {
         );
     }
 
+    /// Test for P256PublicKey::from_sec1_bytes
+    pub fn from_sec1_bytes_at_infinity_test<E: EcdhProviderForP256Test>(_: PhantomData<E>) {
+        // A single [0] byte represents a point at infinity.
+        let sec1 = hex!("00");
+        let result = E::PublicKey::from_sec1_bytes(&sec1);
+        assert!(
+            result.is_err(),
+            "Creating public key from point at infinity should fail"
+        );
+    }
+
     /// Test for P256PublicKey::to_affine_coordinates
     pub fn public_key_to_affine_coordinates_test<E: EcdhProviderForP256Test>(_: PhantomData<E>) {
         // https://www.secg.org/sec1-v2.pdf, section 2.3.3
@@ -203,6 +214,52 @@ pub mod testing {
             "04756c07ba5b596fa96c9099e6619dc62deac4297a8fc1d803d74dc5caa9197c09f0b6da270d2a58a06022
              8bbe76c6dc1643088107636deff8aa79e8002a157b92"
         );
+        let public_key = E::PublicKey::from_sec1_bytes(&sec1).unwrap();
+        let (actual_x, actual_y) = public_key.to_affine_coordinates().unwrap();
+        assert_eq!(actual_x, expected_x);
+        assert_eq!(actual_y, expected_y);
+    }
+
+    /// Test for P256PublicKey::to_affine_coordinates with compressed point with 0x02 octet prefix.
+    /// Support for compressed points is optional according to the specs, but both openssl and
+    /// rustcrypto implementations support it.
+    pub fn public_key_to_affine_coordinates_compressed02_test<E: EcdhProviderForP256Test>(
+        _: PhantomData<E>,
+    ) {
+        // https://www.secg.org/sec1-v2.pdf, section 2.3.3
+        let expected_x = hex!("21238e877c2400f15f9ea7d4353ac0a63dcb5d13168a96fcfc93bdc66031ed1c");
+        let expected_y = hex!("fa339bd0886602e91b9d2aa9b43213f660b680b1c97ef09cb1cacdc14e9d85ee");
+        let sec1 = hex!("0221238e877c2400f15f9ea7d4353ac0a63dcb5d13168a96fcfc93bdc66031ed1c");
+        let public_key = E::PublicKey::from_sec1_bytes(&sec1).unwrap();
+        let (actual_x, actual_y) = public_key.to_affine_coordinates().unwrap();
+        assert_eq!(actual_x, expected_x);
+        assert_eq!(actual_y, expected_y);
+    }
+
+    /// Test for P256PublicKey::to_affine_coordinates with compressed point with 0x03 octet prefix
+    /// Support for compressed points is optional according to the specs, but both openssl and
+    /// rustcrypto implementations support it.
+    pub fn public_key_to_affine_coordinates_compressed03_test<E: EcdhProviderForP256Test>(
+        _: PhantomData<E>,
+    ) {
+        // https://www.secg.org/sec1-v2.pdf, section 2.3.3
+        let expected_x = hex!("f557ef33d52e540e6aa4e6fcbb62a314adcb051cc8a1fefc69d004c282af81ff");
+        let expected_y = hex!("96cd4c6ed5cbf00bb3184e5cd983c3442160310c8519b4c4d16292be83eec539");
+        let sec1 = hex!("03f557ef33d52e540e6aa4e6fcbb62a314adcb051cc8a1fefc69d004c282af81ff");
+        let public_key = E::PublicKey::from_sec1_bytes(&sec1).unwrap();
+        let (actual_x, actual_y) = public_key.to_affine_coordinates().unwrap();
+        assert_eq!(actual_x, expected_x);
+        assert_eq!(actual_y, expected_y);
+    }
+
+    /// Test for P256PublicKey::to_affine_coordinates with the top byte being zero
+    pub fn public_key_to_affine_coordinates_zero_top_byte_test<E: EcdhProviderForP256Test>(
+        _: PhantomData<E>,
+    ) {
+        // https://www.secg.org/sec1-v2.pdf, section 2.3.3
+        let expected_x = hex!("00f24fe76679c57bc6c2f025af92e6c0b2058fb15fa41014775987587400ed48");
+        let expected_y = hex!("e09f6fa9979a60f578a62dca805ad75b9e6b89403f2ebb934869e3697ac590e9");
+        let sec1 = hex!("0400f24fe76679c57bc6c2f025af92e6c0b2058fb15fa41014775987587400ed48e09f6fa9979a60f578a62dca805ad75b9e6b89403f2ebb934869e3697ac590e9");
         let public_key = E::PublicKey::from_sec1_bytes(&sec1).unwrap();
         let (actual_x, actual_y) = public_key.to_affine_coordinates().unwrap();
         assert_eq!(actual_x, expected_x);
@@ -300,9 +357,19 @@ pub mod testing {
     #[case::to_bytes(to_bytes_test)]
     #[case::to_bytes_random(to_bytes_random_test)]
     #[case::from_sec1_bytes_not_on_curve(from_sec1_bytes_not_on_curve_test)]
+    #[case::from_sec1_bytes_not_on_infinity(from_sec1_bytes_at_infinity_test)]
     #[case::from_affine_coordinates(from_affine_coordinates_test)]
     #[case::from_affine_coordinates_not_on_curve(from_affine_coordinates_not_on_curve_test)]
     #[case::public_key_to_affine_coordinates(public_key_to_affine_coordinates_test)]
+    #[case::public_key_to_affine_coordinates_compressed02(
+        public_key_to_affine_coordinates_compressed02_test
+    )]
+    #[case::public_key_to_affine_coordinates_compressed03(
+        public_key_to_affine_coordinates_compressed03_test
+    )]
+    #[case::public_key_to_affine_coordinates_zero_top_byte(
+        public_key_to_affine_coordinates_zero_top_byte_test
+    )]
     #[case::p256_ecdh(p256_ecdh_test)]
     #[case::wycheproof_p256(wycheproof_p256_test)]
     fn p256_test_cases<C: CryptoProvider>(#[case] testcase: CryptoProviderTestCase<C>) {}
