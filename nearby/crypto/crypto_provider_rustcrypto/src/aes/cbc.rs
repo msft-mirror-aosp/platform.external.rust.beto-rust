@@ -44,7 +44,7 @@ impl crypto_provider::aes::cbc::AesCbcPkcs7Padded for AesCbcPkcs7Padded {
 mod tests {
     use super::AesCbcPkcs7Padded;
     use core::marker::PhantomData;
-    use crypto_provider::aes::cbc::testing::*;
+    use crypto_provider_test::aes::cbc::*;
 
     #[apply(aes_256_cbc_test_cases)]
     fn aes_256_cbc_test(testcase: CryptoProviderTestCase<AesCbcPkcs7Padded>) {

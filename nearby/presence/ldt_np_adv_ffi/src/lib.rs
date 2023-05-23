@@ -22,15 +22,11 @@
 )]
 // These features are needed to support no_std + alloc
 #![feature(lang_items)]
-#![feature(alloc_error_handler)]
 
 //! Rust ffi wrapper of ldt_np_adv, can be called from C/C++ Clients
 
-mod handle_map;
-
 extern crate alloc;
 
-use crate::handle_map::get_dec_handle_map;
 use alloc::boxed::Box;
 use core::slice;
 use handle_map::get_enc_handle_map;
@@ -39,6 +35,10 @@ use ldt_np_adv::{
     LdtNpAdvDecrypterXtsAes128, LegacySalt,
 };
 use np_hkdf::NpKeySeedHkdf;
+
+use crate::handle_map::get_dec_handle_map;
+
+mod handle_map;
 
 // Pull in the needed deps for std vs no_std
 cfg_if::cfg_if! {
@@ -158,12 +158,9 @@ extern "C" fn NpLdtEncrypt(
         get_enc_handle_map()
             .get(&handle.handle)
             .map(|cipher| {
-                cipher
-                    .encrypt(data, &padder)
-                    .map(|_| 0)
-                    .map_err(|e| match e {
-                        ldt::LdtError::InvalidLength(_) => EncryptError::InvalidLength,
-                    })
+                cipher.encrypt(data, &padder).map(|_| 0).map_err(|e| match e {
+                    ldt::LdtError::InvalidLength(_) => EncryptError::InvalidLength,
+                })
             })
             .unwrap_or(Err(EncryptError::InvalidHandle))
     })

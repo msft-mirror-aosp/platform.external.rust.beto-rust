@@ -66,9 +66,7 @@ impl crypto_provider::ed25519::KeyPair for KeyPair {
 
     fn public(&self) -> Self::PublicKey {
         PublicKey(
-            self.0
-                .raw_public_key()
-                .expect("should be able to get a pubic key from a keypair"),
+            self.0.raw_public_key().expect("should be able to get a pubic key from a keypair"),
         )
     }
 }
@@ -126,7 +124,7 @@ impl crypto_provider::ed25519::PublicKey for PublicKey {
 #[cfg(test)]
 mod tests {
     use crate::ed25519::Ed25519;
-    use crypto_provider::ed25519::testing::{run_rfc_test_vectors, run_wycheproof_test_vectors};
+    use crypto_provider_test::ed25519::{run_rfc_test_vectors, run_wycheproof_test_vectors};
 
     #[test]
     fn wycheproof_test_ed25519_openssl() {

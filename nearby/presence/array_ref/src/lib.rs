@@ -17,6 +17,9 @@
 
 //! Crate exposing macros to take array references of slices
 
+#[cfg(feature = "std")]
+extern crate std;
+
 /// Generate an array reference to a subset of a slice-able bit of data
 /// panics if the provided offset and len are out of range of the array
 #[macro_export]
@@ -24,9 +27,8 @@ macro_rules! array_ref {
     ($arr:expr, $offset:expr, $len:expr) => {{
         let offset = $offset;
         let slice = &$arr[offset..offset + $len];
-        let result: &[u8; $len] = slice
-            .try_into()
-            .expect("array ref len and offset should be valid for provided array");
+        let result: &[u8; $len] =
+            slice.try_into().expect("array ref len and offset should be valid for provided array");
         result
     }};
 }
@@ -38,9 +40,8 @@ macro_rules! array_mut_ref {
     ($arr:expr, $offset:expr, $len:expr) => {{
         let offset = $offset;
         let slice = &mut $arr[offset..offset + $len];
-        let result: &mut [u8; $len] = slice
-            .try_into()
-            .expect("array ref len and offset should be valid for provided array");
+        let result: &mut [u8; $len] =
+            slice.try_into().expect("array ref len and offset should be valid for provided array");
         result
     }};
 }

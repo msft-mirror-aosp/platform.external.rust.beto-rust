@@ -16,7 +16,7 @@ extern crate alloc;
 
 use alloc::vec;
 use crypto_provider::aes::BLOCK_SIZE;
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use ldt::{
     DefaultPadder, LdtDecryptCipher, LdtEncryptCipher, LdtError, LdtKey, Padder, Swap, XorPadder,
 };
@@ -24,9 +24,9 @@ use xts_aes::{XtsAes128, XtsAes128Key};
 
 #[test]
 fn normal_pad_empty() {
-    let padder = DefaultPadder::default();
+    let padder = DefaultPadder;
     let tweak: xts_aes::Tweak =
-        <DefaultPadder as Padder<16, XtsAes128<RustCrypto>>>::pad_tweak(&padder, &[]);
+        <DefaultPadder as Padder<16, XtsAes128<CryptoProviderImpl>>>::pad_tweak(&padder, &[]);
     let bytes = tweak.le_bytes();
 
     // leading 1 bit
@@ -37,9 +37,9 @@ fn normal_pad_empty() {
 
 #[test]
 fn normal_pad_one_byte() {
-    let padder = DefaultPadder::default();
+    let padder = DefaultPadder;
     let tweak: xts_aes::Tweak =
-        <DefaultPadder as Padder<16, XtsAes128<RustCrypto>>>::pad_tweak(&padder, &[0x81]);
+        <DefaultPadder as Padder<16, XtsAes128<CryptoProviderImpl>>>::pad_tweak(&padder, &[0x81]);
 
     let bytes = tweak.le_bytes();
 
@@ -52,10 +52,10 @@ fn normal_pad_one_byte() {
 
 #[test]
 fn normal_pad_max_len() {
-    let padder = DefaultPadder::default();
+    let padder = DefaultPadder;
     let input = [0x99; 15];
     let tweak: xts_aes::Tweak =
-        <DefaultPadder as Padder<16, XtsAes128<RustCrypto>>>::pad_tweak(&padder, &input);
+        <DefaultPadder as Padder<16, XtsAes128<CryptoProviderImpl>>>::pad_tweak(&padder, &input);
 
     let bytes = tweak.le_bytes();
 
@@ -68,9 +68,9 @@ fn normal_pad_max_len() {
 #[test]
 #[should_panic]
 fn normal_pad_too_big_panics() {
-    let padder = DefaultPadder::default();
+    let padder = DefaultPadder;
     let input = [0x99; 16];
-    <DefaultPadder as Padder<16, XtsAes128<RustCrypto>>>::pad_tweak(&padder, &input);
+    <DefaultPadder as Padder<16, XtsAes128<CryptoProviderImpl>>>::pad_tweak(&padder, &input);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn xor_pad_empty() {
     let padder = [0x24; BLOCK_SIZE].into();
     let tweak: xts_aes::Tweak = <XorPadder<BLOCK_SIZE> as Padder<
         BLOCK_SIZE,
-        XtsAes128<RustCrypto>,
+        XtsAes128<CryptoProviderImpl>,
     >>::pad_tweak(&padder, &[]);
 
     let bytes = tweak.le_bytes();
@@ -94,7 +94,7 @@ fn xor_pad_one_byte() {
     let padder = [0x24; BLOCK_SIZE].into();
     let tweak: xts_aes::Tweak = <XorPadder<BLOCK_SIZE> as Padder<
         BLOCK_SIZE,
-        XtsAes128<RustCrypto>,
+        XtsAes128<CryptoProviderImpl>,
     >>::pad_tweak(&padder, &[0x81]);
 
     let bytes = tweak.le_bytes();
@@ -112,7 +112,7 @@ fn xor_pad_max_len() {
     let input = [0x99; 15];
     let tweak: xts_aes::Tweak = <XorPadder<BLOCK_SIZE> as Padder<
         BLOCK_SIZE,
-        XtsAes128<RustCrypto>,
+        XtsAes128<CryptoProviderImpl>,
     >>::pad_tweak(&padder, &input);
 
     let bytes = tweak.le_bytes();
@@ -129,7 +129,7 @@ fn xor_pad_too_big_panics() {
     let padder = [0x24; BLOCK_SIZE].into();
     // need 1 byte for padding, and 2 more for salt
     let input = [0x99; 16];
-    <XorPadder<BLOCK_SIZE> as Padder<BLOCK_SIZE, XtsAes128<RustCrypto>>>::pad_tweak(
+    <XorPadder<BLOCK_SIZE> as Padder<BLOCK_SIZE, XtsAes128<CryptoProviderImpl>>>::pad_tweak(
         &padder, &input,
     );
 }
@@ -153,25 +153,19 @@ fn decrypt_too_long_err() {
 }
 
 fn do_length_check_dec(len: usize) {
-    let ldt_dec = LdtDecryptCipher::<{ BLOCK_SIZE }, XtsAes128<RustCrypto>, Swap>::new(
+    let ldt_dec = LdtDecryptCipher::<{ BLOCK_SIZE }, XtsAes128<CryptoProviderImpl>, Swap>::new(
         &LdtKey::<XtsAes128Key>::from_concatenated(&[0u8; 64]),
     );
 
     let mut payload = vec![0; len];
-    assert_eq!(
-        Err(LdtError::InvalidLength(len)),
-        ldt_dec.decrypt(&mut payload, &DefaultPadder::default())
-    );
+    assert_eq!(Err(LdtError::InvalidLength(len)), ldt_dec.decrypt(&mut payload, &DefaultPadder));
 }
 
 fn do_length_check_enc(len: usize) {
-    let ldt_enc = LdtEncryptCipher::<{ BLOCK_SIZE }, XtsAes128<RustCrypto>, Swap>::new(
+    let ldt_enc = LdtEncryptCipher::<{ BLOCK_SIZE }, XtsAes128<CryptoProviderImpl>, Swap>::new(
         &LdtKey::<XtsAes128Key>::from_concatenated(&[0u8; 64]),
     );
 
     let mut payload = vec![0; len];
-    assert_eq!(
-        Err(LdtError::InvalidLength(len)),
-        ldt_enc.encrypt(&mut payload, &DefaultPadder::default())
-    );
+    assert_eq!(Err(LdtError::InvalidLength(len)), ldt_enc.encrypt(&mut payload, &DefaultPadder));
 }

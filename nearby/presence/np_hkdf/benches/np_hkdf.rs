@@ -14,27 +14,30 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use crypto_provider::{CryptoProvider, CryptoRng};
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use rand_ext::random_bytes;
 
 pub fn build_np_hkdf(c: &mut Criterion) {
-    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
+    let mut rng = <CryptoProviderImpl as CryptoProvider>::CryptoRng::new();
     for &num_keys in &[1_usize, 10, 100] {
         c.bench_function(&format!("build {num_keys} np_hkdf from key_seed"), |b| {
             let keys = (0..num_keys)
-                .map(|_| random_bytes::<32, RustCrypto>(&mut rng))
+                .map(|_| random_bytes::<32, CryptoProviderImpl>(&mut rng))
                 .collect::<Vec<_>>();
             b.iter(|| {
                 for key_seed in keys.iter() {
-                    black_box(np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(key_seed));
+                    black_box(np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(key_seed));
                 }
             });
         });
         c.bench_function(&format!("hkdf generate {num_keys} hmac keys"), |b| {
             let keys = (0..num_keys)
                 .map(|_| {
-                    np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&random_bytes::<32, RustCrypto>(
-                        &mut rng,
+                    np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&random_bytes::<
+                        32,
+                        CryptoProviderImpl,
+                    >(
+                        &mut rng
                     ))
                 })
                 .collect::<Vec<_>>();
@@ -47,22 +50,28 @@ pub fn build_np_hkdf(c: &mut Criterion) {
         c.bench_function(&format!("hkdf generate {num_keys} AES keys"), |b| {
             let keys = (0..num_keys)
                 .map(|_| {
-                    np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&random_bytes::<32, RustCrypto>(
-                        &mut rng,
+                    np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&random_bytes::<
+                        32,
+                        CryptoProviderImpl,
+                    >(
+                        &mut rng
                     ))
                 })
                 .collect::<Vec<_>>();
             b.iter(|| {
                 for hkdf in keys.iter() {
-                    black_box(hkdf.extended_unsigned_section_aes_key());
+                    black_box(np_hkdf::UnsignedSectionKeys::aes_key(hkdf));
                 }
             });
         });
         c.bench_function(&format!("hkdf generate {num_keys} LDT keys"), |b| {
             let keys = (0..num_keys)
                 .map(|_| {
-                    np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&random_bytes::<32, RustCrypto>(
-                        &mut rng,
+                    np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&random_bytes::<
+                        32,
+                        CryptoProviderImpl,
+                    >(
+                        &mut rng
                     ))
                 })
                 .collect::<Vec<_>>();

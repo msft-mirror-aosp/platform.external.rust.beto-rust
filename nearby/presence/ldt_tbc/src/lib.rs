@@ -23,6 +23,9 @@
 
 //! Defining traits for an LDT specific Tweakable Block Cipher
 
+#[cfg(feature = "std")]
+extern crate std;
+
 use crypto_provider::{CryptoProvider, CryptoRng};
 
 /// The higher level trait defining the single block at a time Tweakable Block Cipher types.

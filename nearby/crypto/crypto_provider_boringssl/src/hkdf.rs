@@ -15,8 +15,8 @@
 //! BoringSSL based HKDF implementation. Unfortunately, because the OpenSSL and BoringSSL APIs
 //! diverged for HKDF, we have to have separate implementations.
 //!
-//! See the _Using BoringSSL_ section in `nearby/scripts/prepare_boringssl.sh` for instructions on
-//! how to test against BoringSSL.
+//! See the _Using BoringSSL_ section in `crypto/README.md` for instructions on
+//! how to test against BoringSSL, or see the subcommands in the top level crate.
 
 use bssl_crypto::digest::Md;
 use crypto_provider::hkdf::InvalidLength;
@@ -37,9 +37,7 @@ impl<M: Md> crypto_provider::hkdf::Hkdf for Hkdf<M> {
         if okm.is_empty() {
             return Ok(());
         }
-        self.0
-            .expand_multi_info(info_components, okm)
-            .map_err(|_| InvalidLength)
+        self.0.expand_multi_info(info_components, okm).map_err(|_| InvalidLength)
     }
 
     fn expand(&self, info: &[u8], okm: &mut [u8]) -> Result<(), InvalidLength> {
@@ -54,7 +52,7 @@ impl<M: Md> crypto_provider::hkdf::Hkdf for Hkdf<M> {
 mod tests {
     use crate::Boringssl;
     use core::marker::PhantomData;
-    use crypto_provider::hkdf::testing::*;
+    use crypto_provider_test::hkdf::*;
 
     #[apply(hkdf_test_cases)]
     fn hkdf_tests(testcase: CryptoProviderTestCase<Boringssl>) {

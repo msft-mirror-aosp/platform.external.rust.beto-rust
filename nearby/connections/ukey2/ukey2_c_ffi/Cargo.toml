@@ -10,17 +10,20 @@ ukey2_rs = { path = "../ukey2" }
 cfg-if.workspace = true
 crypto_provider_openssl = { workspace = true, optional = true }
 crypto_provider_rustcrypto = { workspace = true, optional = true, features = ["alloc"] }
+lock_adapter.workspace = true
 
 lazy_static.workspace = true
 log.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
-spin.workspace = true
+raw-parts = "1.1.2"
 
 [features]
 default = ["rustcrypto"]
-openssl = ["dep:crypto_provider_openssl"]
-rustcrypto = ["dep:crypto_provider_rustcrypto"]
+std = ["crypto_provider_rustcrypto/std", "lock_adapter/std"]
+openssl = ["dep:crypto_provider_openssl", "std"]
+rustcrypto = ["crypto_provider_rustcrypto"]
+crypto_provider_rustcrypto = ["dep:crypto_provider_rustcrypto"]
 
 
 [lib]

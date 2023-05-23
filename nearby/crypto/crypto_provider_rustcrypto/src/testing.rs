@@ -25,10 +25,7 @@ impl<'a, I: Iterator<Item = &'a u8>> rand::CryptoRng for MockCryptoRng<'a, I> {}
 impl<'a, I: Iterator<Item = &'a u8>> rand::RngCore for MockCryptoRng<'a, I> {
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         for i in dest {
-            *i = *self
-                .values
-                .next()
-                .expect("Expecting more data in MockCryptoRng input");
+            *i = *self.values.next().expect("Expecting more data in MockCryptoRng input");
         }
     }
 
