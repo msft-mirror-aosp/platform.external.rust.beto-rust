@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::anyhow;
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use ldt::{DefaultPadder, LdtDecryptCipher, LdtEncryptCipher, LdtKey, Swap, XorPadder};
 use std::{fs, io::Read as _};
 use test_helper::{extract_key_array, extract_key_vec};
@@ -46,25 +46,21 @@ fn aluykx_test_vectors() -> Result<(), anyhow::Error> {
         assert!(len >= crypto_provider::aes::BLOCK_SIZE);
         assert!(len < crypto_provider::aes::BLOCK_SIZE * 2);
 
-        let ldt_enc = LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(
+        let ldt_enc = LdtEncryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(
             &LdtKey::from_concatenated(&key),
         );
-        let ldt_dec = LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(
+        let ldt_dec = LdtDecryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(
             &LdtKey::from_concatenated(&key),
         );
 
         let mut plaintext = [0; 31];
         plaintext[..len].copy_from_slice(&expected_ciphertext);
-        ldt_dec
-            .decrypt(&mut plaintext[..len], &DefaultPadder::default())
-            .unwrap();
+        ldt_dec.decrypt(&mut plaintext[..len], &DefaultPadder).unwrap();
         assert_eq!(&expected_plaintext, &plaintext[..len]);
 
         let mut ciphertext = [0; 31];
         ciphertext[..len].copy_from_slice(&expected_plaintext);
-        ldt_enc
-            .encrypt(&mut ciphertext[..len], &DefaultPadder::default())
-            .unwrap();
+        ldt_enc.encrypt(&mut ciphertext[..len], &DefaultPadder).unwrap();
         assert_eq!(&expected_ciphertext, &ciphertext[..len]);
     }
 
@@ -99,25 +95,21 @@ fn xor_pad_test_vectors() -> Result<(), anyhow::Error> {
         assert!(len >= crypto_provider::aes::BLOCK_SIZE);
         assert!(len < crypto_provider::aes::BLOCK_SIZE * 2);
 
-        let ldt_enc = LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(
+        let ldt_enc = LdtEncryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(
             &LdtKey::from_concatenated(&key),
         );
-        let ldt_dec = LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(
+        let ldt_dec = LdtDecryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(
             &LdtKey::from_concatenated(&key),
         );
 
         let mut plaintext = [0; 31];
         plaintext[..len].copy_from_slice(&expected_ciphertext);
-        ldt_dec
-            .decrypt(&mut plaintext[..len], &XorPadder::from(xor_pad))
-            .unwrap();
+        ldt_dec.decrypt(&mut plaintext[..len], &XorPadder::from(xor_pad)).unwrap();
         assert_eq!(&expected_plaintext, &plaintext[..len]);
 
         let mut ciphertext = [0; 31];
         ciphertext[..len].copy_from_slice(&expected_plaintext);
-        ldt_enc
-            .encrypt(&mut ciphertext[..len], &XorPadder::from(xor_pad))
-            .unwrap();
+        ldt_enc.encrypt(&mut ciphertext[..len], &XorPadder::from(xor_pad)).unwrap();
         assert_eq!(&expected_ciphertext, &ciphertext[..len]);
     }
 

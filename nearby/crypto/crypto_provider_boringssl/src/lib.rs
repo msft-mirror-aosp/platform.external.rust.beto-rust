@@ -56,6 +56,8 @@ impl CryptoProvider for Boringssl {
     type AesCtr128 = Aes128Stubs;
     type AesCtr256 = Aes256Stubs;
     type Ed25519 = Ed25519Stubs;
+    type Aes128GcmSiv = Aes128Stubs;
+    type Aes256GcmSiv = Aes256Stubs;
     type CryptoRng = BoringSslRng;
 
     fn constant_time_eq(_a: &[u8], _b: &[u8]) -> bool {

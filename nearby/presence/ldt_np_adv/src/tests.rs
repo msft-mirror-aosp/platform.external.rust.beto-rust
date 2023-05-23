@@ -11,12 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![allow(
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::expect_used
-)]
+#![allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 
 extern crate alloc;
 
@@ -27,7 +22,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 use crypto_provider::{CryptoProvider, CryptoRng};
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use ldt::{DefaultPadder, LdtError, LdtKey, XorPadder};
 use np_hkdf::NpKeySeedHkdf;
 use rand::Rng;
@@ -37,12 +32,11 @@ use rand_ext::{random_bytes, random_vec, seeded_rng};
 fn decrypt_matches_correct_ciphertext() {
     let mut rng = CryptoRng::new();
     for _ in 0..1_000 {
-        let test_state = make_test_components::<RustCrypto>(&mut rng);
+        let test_state = make_test_components::<CryptoProviderImpl>(&mut rng);
 
         let cipher = build_np_adv_decrypter_from_key_seed(&test_state.hkdf, test_state.hmac);
-        let decrypted = cipher
-            .decrypt_and_verify(&test_state.ciphertext, &test_state.padder)
-            .unwrap();
+        let decrypted =
+            cipher.decrypt_and_verify(&test_state.ciphertext, &test_state.padder).unwrap();
 
         assert_eq!(&test_state.plaintext, decrypted.as_ref());
     }
@@ -52,7 +46,7 @@ fn decrypt_matches_correct_ciphertext() {
 fn decrypt_doesnt_match_when_ciphertext_mangled() {
     let mut rng = CryptoRng::new();
     for _ in 0..1_000 {
-        let mut test_state = make_test_components::<RustCrypto>(&mut rng);
+        let mut test_state = make_test_components::<CryptoProviderImpl>(&mut rng);
 
         // mangle the ciphertext
         test_state.ciphertext[0] ^= 0xAA;
@@ -69,7 +63,7 @@ fn decrypt_doesnt_match_when_ciphertext_mangled() {
 fn decrypt_doesnt_match_when_plaintext_doesnt_match_mac() {
     let mut rng = CryptoRng::new();
     for _ in 0..1_000 {
-        let mut test_state = make_test_components::<RustCrypto>(&mut rng);
+        let mut test_state = make_test_components::<CryptoProviderImpl>(&mut rng);
 
         // mangle the mac
         test_state.hmac[0] ^= 0xAA;
@@ -87,14 +81,12 @@ fn decrypt_doesnt_match_when_plaintext_doesnt_match_mac() {
 fn encrypt_works() {
     let mut rng = CryptoRng::new();
     for _ in 0..1_000 {
-        let test_state = make_test_components::<RustCrypto>(&mut rng);
+        let test_state = make_test_components::<CryptoProviderImpl>(&mut rng);
 
         let cipher = test_state.ldt_enc;
 
         let mut plaintext_copy = test_state.plaintext.clone();
-        cipher
-            .encrypt(&mut plaintext_copy[..], &test_state.padder)
-            .unwrap();
+        cipher.encrypt(&mut plaintext_copy[..], &test_state.padder).unwrap();
 
         assert_eq!(test_state.ciphertext, plaintext_copy);
     }
@@ -103,58 +95,54 @@ fn encrypt_works() {
 #[test]
 #[allow(deprecated)]
 fn encrypt_too_short_err() {
-    let ldt_enc = LdtEncrypterXtsAes128::<RustCrypto>::new(&LdtKey::from_concatenated(&[0; 64]));
+    let ldt_enc =
+        LdtEncrypterXtsAes128::<CryptoProviderImpl>::new(&LdtKey::from_concatenated(&[0; 64]));
 
     let mut payload = [0; 7];
-    assert_eq!(
-        Err(LdtError::InvalidLength(7)),
-        ldt_enc.encrypt(&mut payload, &DefaultPadder::default())
-    );
+    assert_eq!(Err(LdtError::InvalidLength(7)), ldt_enc.encrypt(&mut payload, &DefaultPadder));
 }
 
 #[test]
 #[allow(deprecated)]
 fn encrypt_too_long_err() {
-    let ldt_enc = LdtEncrypterXtsAes128::<RustCrypto>::new(&LdtKey::from_concatenated(&[0; 64]));
+    let ldt_enc =
+        LdtEncrypterXtsAes128::<CryptoProviderImpl>::new(&LdtKey::from_concatenated(&[0; 64]));
 
     let mut payload = [0; 40];
-    assert_eq!(
-        Err(LdtError::InvalidLength(40)),
-        ldt_enc.encrypt(&mut payload, &DefaultPadder::default())
-    );
+    assert_eq!(Err(LdtError::InvalidLength(40)), ldt_enc.encrypt(&mut payload, &DefaultPadder));
 }
 
 #[test]
 fn decrypt_too_short_err() {
     let adv_cipher = LdtNpAdvDecrypterXtsAes128 {
-        ldt_decrypter: LdtXtsAes128Decrypter::<RustCrypto>::new(&LdtKey::from_concatenated(
-            &[0; 64],
-        )),
+        ldt_decrypter: LdtXtsAes128Decrypter::<CryptoProviderImpl>::new(
+            &LdtKey::from_concatenated(&[0; 64]),
+        ),
         metadata_key_tag: [0; 32],
-        metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<RustCrypto>::from([0; 32]),
+        metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<CryptoProviderImpl>::from([0; 32]),
     };
 
     let payload = [0; 7];
     assert_eq!(
         Err(LdtAdvDecryptError::InvalidLength(7)),
-        adv_cipher.decrypt_and_verify(&payload, &DefaultPadder::default())
+        adv_cipher.decrypt_and_verify(&payload, &DefaultPadder)
     );
 }
 
 #[test]
 fn decrypt_too_long_err() {
     let adv_cipher = LdtNpAdvDecrypterXtsAes128 {
-        ldt_decrypter: LdtXtsAes128Decrypter::<RustCrypto>::new(&LdtKey::from_concatenated(
-            &[0; 64],
-        )),
+        ldt_decrypter: LdtXtsAes128Decrypter::<CryptoProviderImpl>::new(
+            &LdtKey::from_concatenated(&[0; 64]),
+        ),
         metadata_key_tag: [0; 32],
-        metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<RustCrypto>::from([0; 32]),
+        metadata_key_hmac_key: np_hkdf::NpHmacSha256Key::<CryptoProviderImpl>::from([0; 32]),
     };
 
     let payload = [0; 40];
     assert_eq!(
         Err(LdtAdvDecryptError::InvalidLength(40)),
-        adv_cipher.decrypt_and_verify(&payload, &DefaultPadder::default())
+        adv_cipher.decrypt_and_verify(&payload, &DefaultPadder)
     );
 }
 
@@ -168,9 +156,7 @@ fn make_test_components<C: crypto_provider::CryptoProvider>(
         .gen_range(crypto_provider::aes::BLOCK_SIZE..=(crypto_provider::aes::BLOCK_SIZE * 2 - 1));
     let plaintext = random_vec::<C>(rng, payload_len);
 
-    let salt = LegacySalt {
-        bytes: random_bytes::<2, C>(rng),
-    };
+    let salt = LegacySalt { bytes: random_bytes::<2, C>(rng) };
     let padder = salt_padder::<16, C>(salt);
 
     let key_seed: [u8; 32] = random_bytes::<32, C>(rng);
@@ -183,9 +169,7 @@ fn make_test_components<C: crypto_provider::CryptoProvider>(
 
     let mut ciphertext = [0_u8; LDT_XTS_AES_MAX_LEN];
     ciphertext[..plaintext.len()].copy_from_slice(&plaintext);
-    ldt_enc
-        .encrypt(&mut ciphertext[..plaintext.len()], &padder)
-        .unwrap();
+    ldt_enc.encrypt(&mut ciphertext[..plaintext.len()], &padder).unwrap();
 
     LdtAdvTestComponents {
         plaintext,

@@ -90,14 +90,8 @@ fn unwrap_device_to_device_message(
 ) -> Result<RustDeviceToDeviceMessage, DecodeError> {
     let result =
         DeviceToDeviceMessage::parse_from_bytes(message).map_err(|_| DecodeError::BadData)?;
-    let (msg, seq_num) = result
-        .message
-        .zip(result.sequence_number)
-        .ok_or(DecodeError::BadData)?;
-    Ok(RustDeviceToDeviceMessage {
-        sequence_num: seq_num,
-        message: msg,
-    })
+    let (msg, seq_num) = result.message.zip(result.sequence_number).ok_or(DecodeError::BadData)?;
+    Ok(RustDeviceToDeviceMessage { sequence_num: seq_num, message: msg })
 }
 
 fn derive_aes256_key<C: CryptoProvider>(initial_key: &[u8], purpose: &[u8]) -> Aes256Key {
@@ -196,10 +190,8 @@ where
         handshake: &CompletedHandshake,
         rng: R,
     ) -> Self {
-        let next_protocol_secret = handshake
-            .next_protocol_secret::<C>()
-            .derive_array::<AES_256_KEY_SIZE>()
-            .unwrap();
+        let next_protocol_secret =
+            handshake.next_protocol_secret::<C>().derive_array::<AES_256_KEY_SIZE>().unwrap();
         D2DConnectionContextV1::new::<C>(
             0,
             0,
@@ -213,10 +205,8 @@ where
         handshake: &CompletedHandshake,
         rng: R,
     ) -> Self {
-        let next_protocol_secret = handshake
-            .next_protocol_secret::<C>()
-            .derive_array::<AES_256_KEY_SIZE>()
-            .unwrap();
+        let next_protocol_secret =
+            handshake.next_protocol_secret::<C>().derive_array::<AES_256_KEY_SIZE>().unwrap();
         D2DConnectionContextV1::new::<C>(
             0,
             0,
@@ -281,13 +271,7 @@ where
             // This should always succeed since all of the parsers above are valid over the entire
             // [u8] space, and we already checked the length at the start.
             .expect("Saved session parsing should succeed");
-        Ok(Self::new::<C>(
-            encode_sequence_num,
-            decode_sequence_num,
-            encode_key,
-            decode_key,
-            rng,
-        ))
+        Ok(Self::new::<C>(encode_sequence_num, decode_sequence_num, encode_key, decode_key, rng))
     }
 
     /// Once initiator and responder have exchanged public keys, use this method to encrypt and
@@ -378,10 +362,8 @@ where
         hmac.verify(payload_mac).map_err(|_| DecodeError::BadData)?;
         let payload =
             HeaderAndBody::parse_from_bytes(&payload).map_err(|_| DecodeError::BadData)?;
-        let associated_data_len = payload
-            .header
-            .as_ref()
-            .and_then(|header| header.associated_data_length);
+        let associated_data_len =
+            payload.header.as_ref().and_then(|header| header.associated_data_length);
         if associated_data_len != associated_data.map(|ad| ad.as_ref().len() as u32) {
             return Err(DecodeError::BadData);
         }

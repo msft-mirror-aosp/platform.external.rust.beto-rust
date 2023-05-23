@@ -50,13 +50,18 @@ class D2DConnectionContextV1 {
 
     private:
         friend class Ukey2Handshake;
-        D2DConnectionContextV1(Ukey2ConnectionContextHandle handle) : handle_(handle) {};
+        D2DConnectionContextV1(Ukey2ConnectionContextHandle handle) : handle_(handle) {}
         const Ukey2ConnectionContextHandle handle_;
 };
 
 struct D2DRestoreConnectionContextV1Result {
     D2DConnectionContextV1 handle;
     CD2DRestoreConnectionContextV1Status status;
+};
+
+struct ParseResult {
+    bool success;
+    std::string alert_to_send;
 };
 
 // Base handshake. This should be used to start a secure channel represented by a D2DConnectionContextV1.
@@ -68,12 +73,10 @@ class Ukey2Handshake {
         static Ukey2Handshake ForInitiator();
         // Returns true if the handshake is complete, false otherwise.
         bool IsHandshakeComplete();
-        // Return if the handshake message can carry a payload.
-        bool CanSendPayloadInHandshakeMessage();
         // Returns raw byte data with the message to send over the wire.
         std::string GetNextHandshakeMessage();
         // Parses the raw handshake message received over the wire.
-        std::string ParseHandshakeMessage(std::string message);
+        ParseResult ParseHandshakeMessage(std::string message);
         // Returns the authentication string of length output_length to be confirmed on both devices.
         std::string GetVerificationString(size_t output_length);
         // Turns this Ukey2Handshake instance into a D2DConnectionContextV1. This method once called,
@@ -81,6 +84,6 @@ class Ukey2Handshake {
         D2DConnectionContextV1 ToConnectionContext();
 
     private:
-        Ukey2Handshake(Ukey2HandshakeContextHandle handle) : handle_(handle) {};
+        Ukey2Handshake(Ukey2HandshakeContextHandle handle) : handle_(handle) {}
         const Ukey2HandshakeContextHandle handle_;
 };

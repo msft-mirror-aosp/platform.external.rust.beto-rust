@@ -43,7 +43,7 @@ Building the image creates a snapshot of the environment that has all of the
 system dependencies needed to start building and running all of the artifacts in
 the codebase.
 
-Running the image runs check-everything.sh to verify all of the targets can
+Running the image runs `cargo run -- check-everything` to verify all of the targets can
 successfully build and all of the tests pass in your new container environment.
 
 To open a bash shell from the container environment:
@@ -57,54 +57,14 @@ to [develop in a Docker container on a remote host](https://code.visualstudio.co
 that way you can make code changes and test them in the same environment without
 having to re-build the image.
 
-### Installing addlicense Tool
-
-This tool helps lint the project for the correct header files being present and
-is run in check_everything.sh
-
-install go:
-
-```sh
-brew install go
-```
-
-Then install the addlicense tool to `$HOME/go/bin`:
-
-```sh
-go install github.com/google/addlicense@latest
-```
-
-Optionally, if you prefer to avoid Go's default `bin` dir that holds build
-output for all go projects, specify the `GOPATH` env var to be the directory to
-install to, e.g. `~/local/addlicense`:
-
-```sh
-GOPATH=~/local/addlicense go install github.com/google/addlicense@latest
-```
-
-This will put the binary at `~/local/addlicense/bin/addlicense` instead
-of `~/go/bin/addlicense`.
-
-Verify that it works:
-
-```sh
-$HOME/go/bin/addlicense -h
-```
-
-Then to auto generate the headers run:
-
-```sh
-$HOME/go/bin/addlicense -c "Google LLC" -l apache .
-```
-
-For more detailed commands see: https://github.com/google/addlicense
-
 ## Common tasks
+
+See `cargo run -- --help` for all the available subcommands.
 
 Check everything:
 
 ```
-./scripts/check-everything.sh
+cargo run -- check-everything
 ```
 
 Build everything:

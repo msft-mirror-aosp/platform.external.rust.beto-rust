@@ -57,18 +57,6 @@ pub trait EphemeralSecret<C: Curve>: Send {
     ) -> Result<<Self::Impl as EcdhProvider<C>>::SharedSecret, Self::Error>;
 }
 
-/// Trait for an ephemeral secret for functions used in testing.
-#[cfg(feature = "testing")]
-pub trait EphemeralSecretForTesting<C: Curve>: EphemeralSecret<C> {
-    /// Creates an ephemeral secret from the given private and public components.
-    fn from_private_components(
-        _private_bytes: &[u8; 32],
-        _public_key: &<Self::Impl as EcdhProvider<C>>::PublicKey,
-    ) -> Result<Self, Self::Error>
-    where
-        Self: Sized;
-}
-
 /// Trait for a public key used for elliptic curve diffie hellman.
 pub trait PublicKey<E: Curve>: Sized + PartialEq + Debug {
     /// The error type associated with Public Key.

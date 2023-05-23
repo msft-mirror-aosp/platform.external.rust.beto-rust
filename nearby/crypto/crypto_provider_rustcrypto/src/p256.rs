@@ -59,14 +59,10 @@ impl crypto_provider::p256::P256PublicKey for P256PublicKey {
     #[allow(clippy::expect_used)]
     fn to_affine_coordinates(&self) -> Result<([u8; 32], [u8; 32]), Self::Error> {
         let p256_key = self.0.to_encoded_point(false);
-        let x: &[u8; 32] = p256_key
-            .x()
-            .expect("Generated key should not be on identity point")
-            .as_ref();
-        let y: &[u8; 32] = p256_key
-            .y()
-            .expect("Generated key should not be on identity point")
-            .as_ref();
+        let x: &[u8; 32] =
+            p256_key.x().expect("Generated key should not be on identity point").as_ref();
+        let y: &[u8; 32] =
+            p256_key.y().expect("Generated key should not be on identity point").as_ref();
         Ok((*x, *y))
     }
     fn from_affine_coordinates(x: &[u8; 32], y: &[u8; 32]) -> Result<Self, Self::Error> {
@@ -100,11 +96,7 @@ impl<R: CryptoRng + SeedableRng + RngCore + Send> EphemeralSecret<P256> for P256
     }
 
     fn public_key_bytes(&self) -> Vec<u8> {
-        self.secret
-            .public_key()
-            .to_encoded_point(false)
-            .as_bytes()
-            .into()
+        self.secret.public_key().to_encoded_point(false).as_bytes().into()
     }
 
     fn diffie_hellman(
@@ -120,7 +112,8 @@ impl<R: CryptoRng + SeedableRng + RngCore + Send> EphemeralSecret<P256> for P256
 
 #[cfg(test)]
 impl<R: CryptoRng + SeedableRng + RngCore + Send>
-    crypto_provider::elliptic_curve::EphemeralSecretForTesting<P256> for P256EphemeralSecret<R>
+    crypto_provider_test::elliptic_curve::EphemeralSecretForTesting<P256>
+    for P256EphemeralSecret<R>
 {
     fn from_private_components(
         private_bytes: &[u8; 32],
@@ -139,7 +132,7 @@ impl<R: CryptoRng + SeedableRng + RngCore + Send>
 mod tests {
     use super::P256Ecdh;
     use core::marker::PhantomData;
-    use crypto_provider::p256::testing::*;
+    use crypto_provider_test::p256::*;
     use rand::rngs::StdRng;
 
     #[apply(p256_test_cases)]

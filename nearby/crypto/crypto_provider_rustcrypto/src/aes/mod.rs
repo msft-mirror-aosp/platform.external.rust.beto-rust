@@ -59,19 +59,13 @@ impl AesCipher for Aes128Cipher {
 
 impl AesEncryptCipher for Aes128Cipher {
     fn encrypt(&self, block: &mut AesBlock) {
-        self.0
-            .encrypt_block(generic_array::GenericArray::from_mut_slice(
-                block.as_mut_slice(),
-            ));
+        self.0.encrypt_block(generic_array::GenericArray::from_mut_slice(block.as_mut_slice()));
     }
 }
 
 impl AesDecryptCipher for Aes128Cipher {
     fn decrypt(&self, block: &mut AesBlock) {
-        self.0
-            .decrypt_block(generic_array::GenericArray::from_mut_slice(
-                block.as_mut_slice(),
-            ))
+        self.0.decrypt_block(generic_array::GenericArray::from_mut_slice(block.as_mut_slice()))
     }
 }
 
@@ -88,19 +82,13 @@ impl AesCipher for Aes256Cipher {
 
 impl AesEncryptCipher for Aes256Cipher {
     fn encrypt(&self, block: &mut AesBlock) {
-        self.0
-            .encrypt_block(generic_array::GenericArray::from_mut_slice(
-                block.as_mut_slice(),
-            ));
+        self.0.encrypt_block(generic_array::GenericArray::from_mut_slice(block.as_mut_slice()));
     }
 }
 
 impl AesDecryptCipher for Aes256Cipher {
     fn decrypt(&self, block: &mut AesBlock) {
-        self.0
-            .decrypt_block(generic_array::GenericArray::from_mut_slice(
-                block.as_mut_slice(),
-            ))
+        self.0.decrypt_block(generic_array::GenericArray::from_mut_slice(block.as_mut_slice()))
     }
 }
 
@@ -113,9 +101,7 @@ impl crypto_provider::aes::ctr::AesCtr for AesCtr128 {
     type Key = crypto_provider::aes::Aes128Key;
 
     fn new(key: &Self::Key, iv: [u8; 16]) -> Self {
-        Self {
-            cipher: ctr::Ctr128BE::new(key.as_array().into(), &iv.into()),
-        }
+        Self { cipher: ctr::Ctr128BE::new(key.as_array().into(), &iv.into()) }
     }
 
     fn encrypt(&mut self, data: &mut [u8]) {
@@ -136,9 +122,7 @@ impl crypto_provider::aes::ctr::AesCtr for AesCtr256 {
     type Key = crypto_provider::aes::Aes256Key;
 
     fn new(key: &Self::Key, iv: [u8; 16]) -> Self {
-        Self {
-            cipher: ctr::Ctr128BE::new(key.as_array().into(), &iv.into()),
-        }
+        Self { cipher: ctr::Ctr128BE::new(key.as_array().into(), &iv.into()) }
     }
 
     fn encrypt(&mut self, data: &mut [u8]) {
@@ -154,8 +138,8 @@ impl crypto_provider::aes::ctr::AesCtr for AesCtr256 {
 mod tests {
     use core::marker::PhantomData;
 
-    use crypto_provider::aes::ctr::testing::*;
-    use crypto_provider::aes::testing::*;
+    use crypto_provider_test::aes::ctr::*;
+    use crypto_provider_test::aes::*;
 
     use super::*;
 

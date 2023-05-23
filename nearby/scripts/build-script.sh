@@ -22,7 +22,9 @@ export SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null &&
 # Use to generate headers for new source code files
 gen_headers() {
   set -e
-  $HOME/go/bin/addlicense -c "Google LLC" -l apache -ignore=**/android/build/** -ignore=target/** -ignore=**/target/** -ignore=".idea/*" -ignore=**/cmake-build/** -ignore="**/java/build/**" .
+  $HOME/go/bin/addlicense -c "Google LLC" -l apache -ignore=**/android/build/** -ignore=target/** \
+      -ignore=**/target/** -ignore=".idea/*" -ignore=**/cmake-build/** -ignore="**/java/build/**" \
+      -ignore="**/ukey2_c_ffi/cpp/build/**" .
 }
 
 # Checks the workspace 3rd party crates and makes sure they have a valid license
@@ -40,6 +42,7 @@ check_everything(){
   check_workspace
   check_boringssl
   check_ldt_ffi
+  check_ukey2_ffi
   build_fuzzers
 }
 
@@ -88,6 +91,7 @@ check_license_headers() {
       -ignore="**/cmake-build/**" \
       -ignore="**/java/build/**" \
       -ignore="**/java/*/build/**" \
+      -ignore="**/ukey2_c_ffi/cpp/build/**" \
       .; then
     echo "License header check succeeded!"
   else
@@ -128,12 +132,11 @@ check_ldt_ffi() {
   # Turn off RustCrypto and use openssl
   cargo build --no-default-features --features=openssl
   # Turn off RustCrypto and use boringssl
-  cargo build --no-default-features --features=boringssl
+  cargo --config .cargo/config-boringssl.toml build --no-default-features --features=boringssl
   cargo doc --no-deps
   cargo clippy --release
   cargo clippy --features=std
   cargo clippy --no-default-features --features=openssl
-  cargo clippy --no-default-features --features=boringssl
   cargo clippy --no-default-features --features=std
   cargo deny check
   cd ../
@@ -155,7 +158,7 @@ check_ldt_ffi() {
 
   # test with boringssl crypto feature flag
   echo "Testing boringssl"
-  (cd ../ldt_np_adv_ffi && cargo build --no-default-features --features boringssl --release)
+  (cd ../ldt_np_adv_ffi && cargo --config .cargo/config-boringssl.toml build --no-default-features --features boringssl --release)
   (cd ldt_np_c_sample/tests && make && ctest)
 
   # test with openssl feature flag
@@ -170,6 +173,30 @@ check_ldt_ffi() {
   cd ../
 }
 
+# Builds and runs tests for the UKEY2 FFI
+check_ukey2_ffi() {
+  set -e
+  cd $SCRIPT_DIR/..
+  cd connections/ukey2/ukey2_c_ffi
+  # Default build, RustCrypto
+  cargo build --release --lib
+  # Try to build with OpenSSL
+  cargo build --no-default-features --features=openssl
+  cargo doc --no-deps
+  cargo clippy --release
+  cargo clippy --no-default-features --features=openssl
+  cargo deny check
+
+  # build C/C++ samples, tests, and benches
+  cd cpp
+  mkdir -p build && cd build
+  cmake ..
+  make all
+  ctest
+
+  cd $SCRIPT_DIR/..
+}
+
 # Clones boringssl and uses bindgen to generate the rust crate, applies AOSP
 # specific patches to the 3p `openssl` crate so that it can use a bssl backend
 prepare_boringssl() {
@@ -181,10 +208,13 @@ prepare_boringssl() {
   if ! git -C boringssl pull origin master; then
     git clone https://boringssl.googlesource.com/boringssl
   fi
-  cd boringssl && mkdir -p build && cd build
+  # Snap to the AOSP commit of boringssl
+   boringssl_rev=$(curl https://android.googlesource.com/platform/external/boringssl/+/master/BORINGSSL_REVISION?format=text | base64 -d)
+  cd boringssl && git checkout $boringssl_rev && mkdir -p build && cd build
   target=$(rustc -vV | awk '/host/ { print $2 }')
   cmake -G Ninja .. -DRUST_BINDINGS="$target" && ninja
-  # A valid Rust crate is built under `boringssl-build/boringssl/build/rust/bssl-sys`
+  # The Rust crate is in `boringssl-build/boringssl/build/rust/bssl-sys`, which depends on a
+  # cmake-generated file as part of its source.
 
   cd $projectroot/boringssl-build
   rm -Rf rust-openssl
@@ -236,9 +266,12 @@ setup_kokoro_macos () {
   go install github.com/google/addlicense@latest
   curl https://sh.rustup.rs -sSf | sh -s -- -y --no-modify-path --default-toolchain 1.68.0
   cargo install --locked cargo-deny --color never 2>&1
+  # Must use this version, as version >= 0.65.0 removes the option "--size_t-is-usize", an option
+  # used by boringssl when generating rust bindings
+  cargo install --version 0.64.0 bindgen-cli
   source "$HOME/.cargo/env"
   rustup install nightly
-  brew install rapidjson google-benchmark ninja bindgen
+  brew install google-benchmark ninja jsoncpp
 
   # Unfortunately CMake is not smart enough to find this on its own, even though
   # it is in fact there by default on the build machines

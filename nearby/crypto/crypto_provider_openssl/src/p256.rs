@@ -33,6 +33,7 @@ impl PartialEq for P256PublicKey {
 
 /// Custom error type for OpenSSL operations.
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum Error {
     /// Error from the openssl crate.
     OpenSslError(ErrorStack),
@@ -146,7 +147,7 @@ impl EphemeralSecret<P256> for P256EphemeralSecret {
 }
 
 #[cfg(test)]
-impl crypto_provider::elliptic_curve::EphemeralSecretForTesting<P256> for P256EphemeralSecret {
+impl crypto_provider_test::elliptic_curve::EphemeralSecretForTesting<P256> for P256EphemeralSecret {
     fn from_private_components(
         private_bytes: &[u8; 32],
         public_key: &P256PublicKey,
@@ -174,7 +175,7 @@ impl EcdhProvider<P256> for P256Ecdh {
 mod tests {
     use super::P256Ecdh;
     use core::marker::PhantomData;
-    use crypto_provider::p256::testing::*;
+    use crypto_provider_test::p256::*;
 
     #[apply(p256_test_cases)]
     fn p256_tests(testcase: CryptoProviderTestCase<P256Ecdh>) {

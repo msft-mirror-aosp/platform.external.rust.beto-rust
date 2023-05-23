@@ -10,10 +10,28 @@ rust_library_rlib {
         "std",
         "alloc",
         "default",
+        "gcm_siv",
     ],
     rustlibs: [
         "libhex",
         "librand",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library_rlib {
+    name: "liblock_adapter",
+    host_supported: true,
+    crate_name: "lock_adapter",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["connections/ukey2/lock_adapter/src/lib.rs"],
+    edition: "2021",
+    features: [
+        "std",
     ],
     apex_available: [
         "//apex_available:platform",
@@ -52,15 +70,18 @@ rust_ffi_shared {
     cargo_pkg_version: "0.1.0",
     srcs: ["connections/ukey2/ukey2_c_ffi/src/lib.rs"],
     edition: "2021",
-    features: ["openssl"],
+    features: [
+        "openssl",
+        "std",
+    ],
     rlibs: [
         "libcfg_if",
         "libcrypto_provider_openssl",
         "liblazy_static",
+        "liblock_adapter",
         "liblog_rust",
         "librand",
         "librand_chacha",
-        "libspin_nostd",
         "libukey2_connections",
         "libukey2_rs",
     ],
@@ -101,7 +122,10 @@ rust_ffi_shared {
     cargo_pkg_version: "0.1.0",
     srcs: ["connections/ukey2/ukey2_jni/src/lib.rs"],
     edition: "2021",
-    features: ["openssl"],
+    features: [
+        "openssl",
+        "std",
+    ],
     // Using rlibs instead of rustlibs here to minimize the size impact on the system image. Since
     // most of the transitive dependencies are included only by this project for U, building this
     // as a single dylib will be more space-efficient. As more Rust project gets added, this may
@@ -112,9 +136,9 @@ rust_ffi_shared {
         "libcrypto_provider_openssl",
         "libjni",
         "liblazy_static",
+        "liblock_adapter",
         "librand",
         "librand_chacha",
-        "libspin_nostd",
         "libukey2_connections",
         "libukey2_rs",
     ],

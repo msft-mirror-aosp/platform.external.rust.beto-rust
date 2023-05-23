@@ -50,6 +50,7 @@ public:
 
     void TearDown(const ::benchmark::State& state)
     {
+        (void) state;
         free(salt);
         free(payload);
         freeCiphers();
@@ -127,7 +128,7 @@ BENCHMARK_DEFINE_F(NpLdtFfiBenchmark, DecryptExistingCiphers)(benchmark::State& 
             NpLdtDecryptAndVerify(dec_handle, payload, payload_len, *salt);
         }
     }
-};
+}
 
 BENCHMARK_REGISTER_F(NpLdtFfiBenchmark, DecryptExistingCiphers)->RangeMultiplier(10)->Range(1, 1000);
 
@@ -141,7 +142,7 @@ BENCHMARK_DEFINE_F(NpLdtFfiBenchmark, DecryptFreshCiphers)(benchmark::State& sta
             NpLdtDecryptAndVerify(handle, payload, payload_len, *salt);
         }
     }
-};
+}
 
 BENCHMARK_REGISTER_F(NpLdtFfiBenchmark, DecryptFreshCiphers)->RangeMultiplier(10)->Range(1, 1000);
 

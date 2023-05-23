@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Salt used in a V1 advertisement.
-use crate::np_hkdf;
+use crate::np_salt_hkdf;
 use core::fmt;
 use crypto_provider::hkdf::Hkdf;
 use crypto_provider::CryptoProvider;
@@ -68,10 +68,7 @@ impl<C: CryptoProvider> V1Salt<C> {
 
 impl<C: CryptoProvider> From<[u8; 16]> for V1Salt<C> {
     fn from(arr: [u8; 16]) -> Self {
-        Self {
-            data: arr,
-            hkdf: np_hkdf::<C>(&arr),
-        }
+        Self { data: arr, hkdf: np_salt_hkdf::<C>(&arr) }
     }
 }
 
@@ -110,9 +107,7 @@ impl DataElementOffset {
     ///
     /// Does not handle overflow as there can't be more than 2^8 DEs in a section.
     pub const fn incremented(&self) -> Self {
-        Self {
-            offset: self.offset + 1,
-        }
+        Self { offset: self.offset + 1 }
     }
 }
 

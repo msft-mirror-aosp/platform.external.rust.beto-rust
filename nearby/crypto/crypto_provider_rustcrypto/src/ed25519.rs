@@ -38,9 +38,7 @@ impl crypto_provider::ed25519::KeyPair for KeyPair {
     }
 
     fn from_bytes(bytes: [u8; KEY_PAIR_LENGTH]) -> Result<Self, InvalidBytes> {
-        ed25519_dalek::SigningKey::from_keypair_bytes(&bytes)
-            .map(Self)
-            .map_err(|_| InvalidBytes)
+        ed25519_dalek::SigningKey::from_keypair_bytes(&bytes).map(Self).map_err(|_| InvalidBytes)
     }
 
     #[allow(clippy::expect_used)]
@@ -69,9 +67,7 @@ impl crypto_provider::ed25519::Signature for Signature {
         if bytes.len() != SIGNATURE_LENGTH {
             return Err(InvalidSignature);
         }
-        ed25519_dalek::Signature::from_slice(bytes)
-            .map(Self)
-            .map_err(|_| InvalidSignature)
+        ed25519_dalek::Signature::from_slice(bytes).map(Self).map_err(|_| InvalidSignature)
     }
 
     fn to_bytes(&self) -> [u8; SIGNATURE_LENGTH] {
@@ -88,9 +84,7 @@ impl crypto_provider::ed25519::PublicKey for PublicKey {
     where
         Self: Sized,
     {
-        ed25519_dalek::VerifyingKey::from_bytes(&bytes)
-            .map(PublicKey)
-            .map_err(|_| InvalidBytes)
+        ed25519_dalek::VerifyingKey::from_bytes(&bytes).map(PublicKey).map_err(|_| InvalidBytes)
     }
 
     fn to_bytes(&self) -> [u8; KEY_LENGTH] {
@@ -102,15 +96,13 @@ impl crypto_provider::ed25519::PublicKey for PublicKey {
         message: &[u8],
         signature: &Self::Signature,
     ) -> Result<(), SignatureError> {
-        self.0
-            .verify_strict(message, &signature.0)
-            .map_err(|_| SignatureError)
+        self.0.verify_strict(message, &signature.0).map_err(|_| SignatureError)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crypto_provider::ed25519::testing::{run_rfc_test_vectors, run_wycheproof_test_vectors};
+    use crypto_provider_test::ed25519::{run_rfc_test_vectors, run_wycheproof_test_vectors};
 
     use crate::ed25519::Ed25519;
 

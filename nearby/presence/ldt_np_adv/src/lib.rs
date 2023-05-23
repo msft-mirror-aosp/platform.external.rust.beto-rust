@@ -23,6 +23,9 @@
     clippy::expect_used
 )]
 
+#[cfg(feature = "std")]
+extern crate std;
+
 #[cfg(test)]
 mod np_adv_test_vectors;
 #[cfg(test)]

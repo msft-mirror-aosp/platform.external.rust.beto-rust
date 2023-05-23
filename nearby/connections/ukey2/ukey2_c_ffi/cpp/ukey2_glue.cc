@@ -15,16 +15,10 @@
 #include "ukey2_bindings.h"
 #include "ukey2_ffi.h"
 
+#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <string>
-
-CFFIByteArray messageToByteArray(const std::string message) {
-    return {
-        .handle = (uint8_t*) (new std::string(message))->c_str(),
-        .len = message.length(),
-    };
-}
 
 CFFIByteArray nullByteArray() {
     return {
@@ -46,10 +40,6 @@ bool Ukey2Handshake::IsHandshakeComplete() {
     return is_handshake_complete(handle_);
 }
 
-bool Ukey2Handshake::CanSendPayloadInHandshakeMessage() {
-    return can_send_payload_in_handshake_message(handle_);
-}
-
 std::string Ukey2Handshake::GetNextHandshakeMessage() {
     RustFFIByteArray array = get_next_handshake_message(handle_);
     std::string ret = std::string((const char*) array.handle, array.len);
@@ -57,11 +47,25 @@ std::string Ukey2Handshake::GetNextHandshakeMessage() {
     return ret;
 }
 
-std::string Ukey2Handshake::ParseHandshakeMessage(std::string message) {
-    RustFFIByteArray array = parse_handshake_message(handle_, messageToByteArray(message));
-    std::string ret = std::string((const char*) array.handle, array.len);
-    rust_dealloc_ffi_byte_array(array);
-    return ret;
+ParseResult Ukey2Handshake::ParseHandshakeMessage(std::string message) {
+    CFFIByteArray messageRaw{
+        .handle = (uint8_t*)message.c_str(),
+        .len = message.length(),
+    };
+    CMessageParseResult result = parse_handshake_message(handle_, messageRaw);
+    std::string alert;
+    if (!result.success) {
+        std::cout << "parse failed" << std::endl;
+        RustFFIByteArray array = result.alert_to_send;
+        if (array.handle != nullptr) {
+            alert = std::string((const char*) array.handle, array.len);
+            rust_dealloc_ffi_byte_array(array);
+        }
+    }
+    return ParseResult {
+        .success = result.success,
+        .alert_to_send = alert,
+    };
 }
 
 std::string Ukey2Handshake::GetVerificationString(size_t output_length) {
@@ -77,14 +81,35 @@ D2DConnectionContextV1 Ukey2Handshake::ToConnectionContext() {
 }
 
 std::string D2DConnectionContextV1::DecodeMessageFromPeer(std::string message, std::string associated_data) {
-    RustFFIByteArray array = decode_message_from_peer(handle_, messageToByteArray(message), messageToByteArray(associated_data));
+    CFFIByteArray messageRaw{
+        .handle = (uint8_t*)message.c_str(),
+        .len = message.length(),
+    };
+    CFFIByteArray associatedDataRaw{
+        .handle = (uint8_t*)associated_data.c_str(),
+        .len = associated_data.length(),
+    };
+    RustFFIByteArray array =
+        decode_message_from_peer(handle_, messageRaw, associatedDataRaw);
+    if (array.handle == nullptr) {
+        return "";
+    }
     std::string ret = std::string((const char*) array.handle, array.len);
     rust_dealloc_ffi_byte_array(array);
     return ret;
 }
 
 std::string D2DConnectionContextV1::EncodeMessageToPeer(std::string message, std::string associated_data) {
-    RustFFIByteArray array = encode_message_to_peer(handle_, messageToByteArray(message), messageToByteArray(associated_data));
+    CFFIByteArray messageRaw{
+        .handle = (uint8_t*)message.c_str(),
+        .len = message.length(),
+    };
+    CFFIByteArray associatedDataRaw{
+        .handle = (uint8_t*)associated_data.c_str(),
+        .len = associated_data.length(),
+    };
+    RustFFIByteArray array =
+        encode_message_to_peer(handle_, messageRaw, associatedDataRaw);
     std::string ret = std::string((const char*) array.handle, array.len);
     rust_dealloc_ffi_byte_array(array);
     return ret;
@@ -113,7 +138,11 @@ std::string D2DConnectionContextV1::SaveSession() {
 }
 
 D2DRestoreConnectionContextV1Result D2DConnectionContextV1::FromSavedSession(std::string data) {
-    auto result = from_saved_session(messageToByteArray(data));
+    CFFIByteArray arr{
+        .handle = (uint8_t*)data.c_str(),
+        .len = data.length(),
+    };
+    auto result = from_saved_session(arr);
     return {
         D2DConnectionContextV1(result.handle),
         result.status,
