@@ -68,7 +68,7 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send> EphemeralSecret<X25519>
 
 #[cfg(test)]
 impl<R: CryptoRng + RngCore + SeedableRng + Send>
-    crypto_provider::elliptic_curve::EphemeralSecretForTesting<X25519>
+    crypto_provider_test::elliptic_curve::EphemeralSecretForTesting<X25519>
     for X25519EphemeralSecret<R>
 {
     fn from_private_components(
@@ -76,11 +76,9 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send>
         _public_key: &X25519PublicKey,
     ) -> Result<Self, Self::Error> {
         Ok(Self {
-            secret: x25519_dalek::EphemeralSecret::random_from_rng(
-                &mut crate::testing::MockCryptoRng {
-                    values: private_bytes.iter(),
-                },
-            ),
+            secret: x25519_dalek::EphemeralSecret::random_from_rng(crate::testing::MockCryptoRng {
+                values: private_bytes.iter(),
+            }),
             marker: Default::default(),
         })
     }
@@ -114,7 +112,7 @@ pub enum Error {
 mod tests {
     use super::X25519Ecdh;
     use core::marker::PhantomData;
-    use crypto_provider::x25519::testing::*;
+    use crypto_provider_test::x25519::*;
     use rand::rngs::StdRng;
 
     #[apply(x25519_test_cases)]

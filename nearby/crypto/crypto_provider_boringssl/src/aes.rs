@@ -49,9 +49,7 @@ impl AesCipher for Aes128EncryptCipher {
     type Key = Aes128Key;
 
     fn new(key: &Self::Key) -> Self {
-        Self(bssl_crypto::aes::AesEncryptKey::new_aes_128(
-            *key.as_array(),
-        ))
+        Self(bssl_crypto::aes::AesEncryptKey::new_aes_128(*key.as_array()))
     }
 }
 
@@ -65,9 +63,7 @@ impl AesCipher for Aes128DecryptCipher {
     type Key = Aes128Key;
 
     fn new(key: &Self::Key) -> Self {
-        Self(bssl_crypto::aes::AesDecryptKey::new_aes_128(
-            *key.as_array(),
-        ))
+        Self(bssl_crypto::aes::AesDecryptKey::new_aes_128(*key.as_array()))
     }
 }
 
@@ -81,9 +77,7 @@ impl AesCipher for Aes256EncryptCipher {
     type Key = Aes256Key;
 
     fn new(key: &Self::Key) -> Self {
-        Self(bssl_crypto::aes::AesEncryptKey::new_aes_256(
-            *key.as_array(),
-        ))
+        Self(bssl_crypto::aes::AesEncryptKey::new_aes_256(*key.as_array()))
     }
 }
 
@@ -97,9 +91,7 @@ impl AesCipher for Aes256DecryptCipher {
     type Key = Aes256Key;
 
     fn new(key: &Self::Key) -> Self {
-        Self(bssl_crypto::aes::AesDecryptKey::new_aes_256(
-            *key.as_array(),
-        ))
+        Self(bssl_crypto::aes::AesDecryptKey::new_aes_256(*key.as_array()))
     }
 }
 
@@ -113,7 +105,7 @@ impl AesDecryptCipher for Aes256DecryptCipher {
 mod tests {
     use super::*;
     use core::marker::PhantomData;
-    use crypto_provider::aes::testing::*;
+    use crypto_provider_test::aes::*;
 
     #[apply(aes_128_encrypt_test_cases)]
     fn aes_128_encrypt_test(testcase: CryptoProviderTestCase<Aes128EncryptCipher>) {

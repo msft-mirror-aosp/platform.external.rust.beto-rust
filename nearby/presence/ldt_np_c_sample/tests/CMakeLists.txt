@@ -16,6 +16,12 @@ cmake_minimum_required(VERSION 3.14)
 
 # GoogleTest requires at least C++14
 set(CMAKE_CXX_STANDARD 14)
+add_compile_options(-Wall -Wextra -Wimplicit-fallthrough -Wextra-semi
+        -Wno-missing-field-initializers -Wno-unused-parameter -Wno-psabi
+        -Wno-unneeded-internal-declaration
+        -Wno-ignored-pragma-optimize
+        -Wno-bitfield-constant-conversion -Wno-deprecated-this-capture -Wshadow
+        -Wsign-compare)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -26,12 +32,16 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
-find_package(RapidJSON REQUIRED)
-message(STATUS "RapidJson include directories: ${RAPIDJSON_INCLUDE_DIRS}${RapidJSON_INCLUDE_DIRS}")
-include_directories("${RAPIDJSON_INCLUDE_DIRS}${RapidJSON_INCLUDE_DIRS}")
 
 find_package(benchmark REQUIRED)
 add_compile_options(-fsanitize=address)
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JSONCPP jsoncpp)
+include_directories("${JSONCPP_INCLUDEDIR}")
+
+file(COPY ${CMAKE_SOURCE_DIR}/ldt_np_adv/resources/test/np_adv_test_vectors.json
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_executable(
   np_ffi_tests
@@ -54,6 +64,7 @@ target_link_libraries(
 target_link_libraries(
   np_ffi_tests
   "${CMAKE_SOURCE_DIR}/ldt_np_adv_ffi/target/release/libldt_np_adv_ffi.a"
+  ${pkgcfg_lib_JSONCPP_jsoncpp}
   GTest::gtest_main
   OpenSSL::SSL
   dl pthread -fsanitize=address

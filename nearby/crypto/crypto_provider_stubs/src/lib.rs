@@ -17,8 +17,12 @@
 //! Can be removed once no one else is depending on it.
 
 #![allow(unused_variables)]
+
+use std::fmt::Debug;
+
 use crypto_provider::aes::cbc::{AesCbcIv, AesCbcPkcs7Padded, DecryptionError};
 use crypto_provider::aes::ctr::AesCtr;
+use crypto_provider::aes::gcm_siv::{AesGcmSiv, GcmSivError};
 use crypto_provider::aes::{
     Aes, Aes128Key, Aes256Key, AesBlock, AesCipher, AesDecryptCipher, AesEncryptCipher,
 };
@@ -31,9 +35,7 @@ use crypto_provider::elliptic_curve::{EcdhProvider, EphemeralSecret, PublicKey};
 use crypto_provider::hkdf::{Hkdf, InvalidLength};
 use crypto_provider::hmac::{Hmac, MacError};
 use crypto_provider::p256::{P256PublicKey, P256};
-
 use crypto_provider::x25519::X25519;
-use std::fmt::Debug;
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct CryptoProviderStubs;
@@ -53,6 +55,8 @@ impl crypto_provider::CryptoProvider for CryptoProviderStubs {
     type AesCtr128 = Aes128Stubs;
     type AesCtr256 = Aes256Stubs;
     type Ed25519 = Ed25519Stubs;
+    type Aes128GcmSiv = Aes128Stubs;
+    type Aes256GcmSiv = Aes256Stubs;
     type CryptoRng = ();
 
     fn constant_time_eq(_a: &[u8], _b: &[u8]) -> bool {
@@ -61,6 +65,7 @@ impl crypto_provider::CryptoProvider for CryptoProviderStubs {
 }
 
 pub struct Aes128Impl;
+
 impl Aes for Aes128Impl {
     type Key = Aes128Key;
     type EncryptCipher = Aes128Stubs;
@@ -68,6 +73,7 @@ impl Aes for Aes128Impl {
 }
 
 pub struct Aes256Impl;
+
 impl Aes for Aes256Impl {
     type Key = Aes256Key;
     type EncryptCipher = Aes256Stubs;
@@ -76,6 +82,7 @@ impl Aes for Aes256Impl {
 
 #[derive(Clone)]
 pub struct HkdfStubs;
+
 impl Hkdf for HkdfStubs {
     fn new(_salt: Option<&[u8]>, _ikm: &[u8]) -> Self {
         unimplemented!()
@@ -95,6 +102,7 @@ impl Hkdf for HkdfStubs {
 }
 
 pub struct HmacStubs;
+
 impl Hmac<32> for HmacStubs {
     fn new_from_key(_key: [u8; 32]) -> Self {
         unimplemented!()
@@ -156,6 +164,7 @@ impl Hmac<64> for HmacStubs {
 }
 
 pub struct AesCbcPkcs7PaddedStubs;
+
 impl AesCbcPkcs7Padded for AesCbcPkcs7PaddedStubs {
     fn encrypt(_key: &Aes256Key, _iv: &AesCbcIv, _message: &[u8]) -> Vec<u8> {
         unimplemented!()
@@ -171,6 +180,7 @@ impl AesCbcPkcs7Padded for AesCbcPkcs7PaddedStubs {
 }
 
 pub struct X25519Stubs;
+
 impl EcdhProvider<X25519> for X25519Stubs {
     type PublicKey = EcdhPubKey;
     type EphemeralSecret = EphSecretStubs;
@@ -178,6 +188,7 @@ impl EcdhProvider<X25519> for X25519Stubs {
 }
 
 pub struct EphSecretStubs;
+
 impl EphemeralSecret<X25519> for EphSecretStubs {
     type Impl = X25519Stubs;
     type Error = ();
@@ -222,6 +233,7 @@ impl EphemeralSecret<P256> for EphSecretStubs {
 
 #[derive(Debug, PartialEq)]
 pub struct EcdhPubKey;
+
 impl PublicKey<X25519> for EcdhPubKey {
     type Error = ();
 
@@ -236,6 +248,7 @@ impl PublicKey<X25519> for EcdhPubKey {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct PublicKeyStubs;
+
 impl P256PublicKey for PublicKeyStubs {
     type Error = ();
 
@@ -257,6 +270,7 @@ impl P256PublicKey for PublicKeyStubs {
 }
 
 pub struct P256Stubs;
+
 impl EcdhProvider<P256> for P256Stubs {
     type PublicKey = PublicKeyStubs;
     type EphemeralSecret = EphSecretStubs;
@@ -264,6 +278,7 @@ impl EcdhProvider<P256> for P256Stubs {
 }
 
 pub struct Sha2Stubs;
+
 impl crypto_provider::sha2::Sha256 for Sha2Stubs {
     fn sha256(_input: &[u8]) -> [u8; 32] {
         unimplemented!()
@@ -314,6 +329,22 @@ impl AesCtr for Aes128Stubs {
     }
 }
 
+impl AesGcmSiv for Aes128Stubs {
+    type Key = Aes128Key;
+
+    fn new(key: &Self::Key) -> Self {
+        unimplemented!()
+    }
+
+    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+        unimplemented!()
+    }
+
+    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+        unimplemented!()
+    }
+}
+
 pub struct Aes256Stubs;
 
 impl AesCipher for Aes256Stubs {
@@ -351,7 +382,25 @@ impl AesCtr for Aes256Stubs {
         unimplemented!()
     }
 }
+
+impl AesGcmSiv for Aes256Stubs {
+    type Key = Aes256Key;
+
+    fn new(key: &Self::Key) -> Self {
+        unimplemented!()
+    }
+
+    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+        unimplemented!()
+    }
+
+    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+        unimplemented!()
+    }
+}
+
 pub struct Ed25519Stubs;
+
 impl Ed25519Provider for Ed25519Stubs {
     type KeyPair = KeyPairStubs;
     type PublicKey = PublicKeyStubs;
@@ -382,6 +431,7 @@ impl ed25519::PublicKey for PublicKeyStubs {
 }
 
 pub struct SignatureStubs;
+
 impl Signature for SignatureStubs {
     fn from_bytes(_bytes: &[u8]) -> Result<Self, InvalidSignature> {
         unimplemented!()
@@ -393,6 +443,7 @@ impl Signature for SignatureStubs {
 }
 
 pub struct KeyPairStubs;
+
 impl KeyPair for KeyPairStubs {
     type PublicKey = PublicKeyStubs;
     type Signature = SignatureStubs;

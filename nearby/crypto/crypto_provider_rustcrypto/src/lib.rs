@@ -23,6 +23,15 @@
 
 //! Crate which provides impls for CryptoProvider backed by RustCrypto crates
 
+use core::{fmt::Debug, marker::PhantomData};
+
+use cfg_if::cfg_if;
+pub use hkdf;
+pub use hmac;
+use rand::{Rng, RngCore, SeedableRng};
+use rand_core::CryptoRng;
+use subtle::ConstantTimeEq;
+
 /// Contains the RustCrypto backed AES impl for CryptoProvider
 pub mod aes;
 /// Contains the RustCrypto backed impl for ed25519 key generation, signing, and verification
@@ -37,15 +46,6 @@ mod p256;
 mod sha2_rc;
 /// Contains the RustCrypto backed X25519 impl for CryptoProvider
 mod x25519;
-
-pub use hkdf;
-pub use hmac;
-
-use cfg_if::cfg_if;
-use core::{fmt::Debug, marker::PhantomData};
-use rand::{Rng, RngCore, SeedableRng};
-use rand_core::CryptoRng;
-use subtle::ConstantTimeEq;
 
 cfg_if! {
     if #[cfg(feature = "std")] {
@@ -67,9 +67,7 @@ pub struct RustCryptoImpl<R: CryptoRng + SeedableRng + RngCore> {
 impl<R: CryptoRng + SeedableRng + RngCore> RustCryptoImpl<R> {
     /// Create a new instance of RustCrypto
     pub fn new() -> Self {
-        Self {
-            _marker: Default::default(),
-        }
+        Self { _marker: Default::default() }
     }
 }
 
@@ -91,6 +89,10 @@ impl<R: CryptoRng + SeedableRng + RngCore + Eq + PartialEq + Debug + Clone + Sen
     type AesCtr128 = aes::AesCtr128;
     type AesCtr256 = aes::AesCtr256;
     type Ed25519 = ed25519::Ed25519;
+    #[cfg(feature = "gcm_siv")]
+    type Aes128GcmSiv = aes::gcm_siv::AesGcmSiv128;
+    #[cfg(feature = "gcm_siv")]
+    type Aes256GcmSiv = aes::gcm_siv::AesGcmSiv256;
     type CryptoRng = RcRng<R>;
 
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -120,9 +122,11 @@ mod testing;
 
 #[cfg(test)]
 mod tests {
-    use crate::RustCrypto;
     use core::marker::PhantomData;
-    use crypto_provider::sha2::testing::*;
+
+    use crypto_provider_test::sha2::*;
+
+    use crate::RustCrypto;
 
     #[apply(sha2_test_cases)]
     fn sha2_tests(testcase: CryptoProviderTestCase<RustCrypto>) {

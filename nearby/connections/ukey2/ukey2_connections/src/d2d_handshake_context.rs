@@ -116,10 +116,7 @@ where
             D2DConnectionContextV1::<StdRng>::NEXT_PROTOCOL_IDENTIFIER.to_owned(),
             handshake_impl,
         );
-        Self {
-            state: InitiatorState::Stage1(client),
-            rng,
-        }
+        Self { state: InitiatorState::Stage1(client), rng }
     }
 }
 
@@ -173,13 +170,12 @@ where
         // Since self.rng is expected to be a seeded PRNG, not an OsRng directly, from_rng
         // should never fail. https://rust-random.github.io/book/guide-err.html
         let rng = R::from_rng(&mut self.rng).unwrap();
-        self.to_completed_handshake()
-            .and_then(|h| match h.next_protocol.as_ref() {
-                D2DConnectionContextV1::<R>::NEXT_PROTOCOL_IDENTIFIER => Ok(
-                    D2DConnectionContextV1::from_initiator_handshake::<C>(h, rng),
-                ),
-                _ => Err(HandshakeError::HandshakeNotComplete),
-            })
+        self.to_completed_handshake().and_then(|h| match h.next_protocol.as_ref() {
+            D2DConnectionContextV1::<R>::NEXT_PROTOCOL_IDENTIFIER => {
+                Ok(D2DConnectionContextV1::from_initiator_handshake::<C>(h, rng))
+            }
+            _ => Err(HandshakeError::HandshakeNotComplete),
+        })
     }
 }
 
@@ -284,17 +280,16 @@ where
         // Since self.rng is expected to be a seeded PRNG, not an OsRng directly, from_rng
         // should never fail. https://rust-random.github.io/book/guide-err.html
         let rng = R::from_rng(&mut self.rng).unwrap();
-        self.to_completed_handshake()
-            .map(|h| match h.next_protocol.as_ref() {
-                D2DConnectionContextV1::<R>::NEXT_PROTOCOL_IDENTIFIER => {
-                    D2DConnectionContextV1::from_responder_handshake::<C>(h, rng)
-                }
-                _ => {
-                    // This should never happen because ukey2_handshake should set next_protocol to
-                    // one of the values we passed in Ukey2ServerStage1::from, which doesn't contain
-                    // any other value.
-                    panic!("Unknown next protocol: {}", h.next_protocol);
-                }
-            })
+        self.to_completed_handshake().map(|h| match h.next_protocol.as_ref() {
+            D2DConnectionContextV1::<R>::NEXT_PROTOCOL_IDENTIFIER => {
+                D2DConnectionContextV1::from_responder_handshake::<C>(h, rng)
+            }
+            _ => {
+                // This should never happen because ukey2_handshake should set next_protocol to
+                // one of the values we passed in Ukey2ServerStage1::from, which doesn't contain
+                // any other value.
+                panic!("Unknown next protocol: {}", h.next_protocol);
+            }
+        })
     }
 }

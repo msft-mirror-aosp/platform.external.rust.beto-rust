@@ -27,6 +27,9 @@
 //! See NIST docs [here](https://luca-giuzzi.unibs.it/corsi/Support/papers-cryptography/1619-2007-NIST-Submission.pdf)
 //! and [here](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38e.pdf).
 
+#[cfg(feature = "std")]
+extern crate std;
+
 use array_ref::{array_mut_ref, array_ref};
 use core::fmt;
 use core::marker::PhantomData;
@@ -289,8 +292,7 @@ impl<A: Aes<Key = K::BlockCipherKey>, K: XtsKey + TweakableBlockCipherKey>
     fn encrypt(&self, tweak: Self::Tweak, block: &mut [u8; 16]) {
         // we're encrypting precisely one block, so the block number won't advance, and ciphertext
         // stealing will not be applied.
-        self.encrypt_data_unit(tweak, block)
-            .expect("One block is a valid size");
+        self.encrypt_data_unit(tweak, block).expect("One block is a valid size");
     }
 }
 
@@ -310,8 +312,7 @@ impl<A: Aes<Key = K::BlockCipherKey>, K: XtsKey + TweakableBlockCipherKey>
 
     #[allow(clippy::expect_used)]
     fn decrypt(&self, tweak: Self::Tweak, block: &mut [u8; 16]) {
-        self.decrypt_data_unit(tweak, block)
-            .expect("One block is a valid size");
+        self.decrypt_data_unit(tweak, block).expect("One block is a valid size");
     }
 }
 
@@ -364,10 +365,7 @@ impl TryFrom<&[u8]> for XtsAes128Key {
 
     fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
         try_split_concat_key::<16>(slice)
-            .map(|(key_1, key_2)| Self {
-                key_1: key_1.into(),
-                key_2: key_2.into(),
-            })
+            .map(|(key_1, key_2)| Self { key_1: key_1.into(), key_2: key_2.into() })
             .ok_or_else(XtsKeyTryFromSliceError::new)
     }
 }
@@ -390,10 +388,7 @@ impl TweakableBlockCipherKey for XtsAes128Key {
     // Allow index slicing, since a panic will be impossible to hit
     #[allow(clippy::indexing_slicing)]
     fn split_from_concatenated(key: &Self::ConcatenatedKeyArray) -> (Self, Self) {
-        (
-            (array_ref!(key, 0, 32)).into(),
-            (array_ref!(key, 32, 32)).into(),
-        )
+        ((array_ref!(key, 0, 32)).into(), (array_ref!(key, 32, 32)).into())
     }
 
     fn concatenate_with(&self, other: &Self) -> Self::ConcatenatedKeyArray {
@@ -431,10 +426,7 @@ impl TryFrom<&[u8]> for XtsAes256Key {
 
     fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
         try_split_concat_key::<32>(slice)
-            .map(|(key_1, key_2)| Self {
-                key_1: key_1.into(),
-                key_2: key_2.into(),
-            })
+            .map(|(key_1, key_2)| Self { key_1: key_1.into(), key_2: key_2.into() })
             .ok_or_else(XtsKeyTryFromSliceError::new)
     }
 }
@@ -457,10 +449,7 @@ impl TweakableBlockCipherKey for XtsAes256Key {
     // Allow index slicing, since a panic will be impossible to hit
     #[allow(clippy::indexing_slicing)]
     fn split_from_concatenated(key: &Self::ConcatenatedKeyArray) -> (Self, Self) {
-        (
-            (array_ref!(key, 0, 64)).into(),
-            (array_ref!(key, 64, 64)).into(),
-        )
+        ((array_ref!(key, 0, 64)).into(), (array_ref!(key, 64, 64)).into())
     }
 
     fn concatenate_with(&self, other: &Self) -> Self::ConcatenatedKeyArray {
@@ -507,9 +496,7 @@ impl From<crypto_provider::aes::AesBlock> for Tweak {
 
 impl From<u128> for Tweak {
     fn from(n: u128) -> Self {
-        Self {
-            bytes: n.to_le_bytes(),
-        }
+        Self { bytes: n.to_le_bytes() }
     }
 }
 
@@ -525,10 +512,7 @@ pub(crate) struct TweakState {
 impl TweakState {
     /// Create a TweakState from the provided state with block_num = 0.
     fn new(tweak: [u8; 16]) -> TweakState {
-        TweakState {
-            block_num: 0,
-            tweak,
-        }
+        TweakState { block_num: 0, tweak }
     }
 
     /// Advance the tweak state in the data unit to the `block_num`'th block without encrypting
@@ -553,31 +537,17 @@ impl TweakState {
             // polynomial in F_2^128 (x^128 = x^7 + x^2 + x + 1 = 0) = 135 decimal.
             // % 128 is compiled as & !128 (i.e. fast).
             target[0] = (2
-                * (self
-                    .tweak
-                    .first()
-                    .expect("aes block must have non zero length")
-                    % 128))
+                * (self.tweak.first().expect("aes block must have non zero length") % 128))
                 ^ (135
                     * select_hi_bit(
-                        *self
-                            .tweak
-                            .get(15)
-                            .expect("15 is a valid index in an aes block"),
+                        *self.tweak.get(15).expect("15 is a valid index in an aes block"),
                     ));
             // Remaining bytes
             for (j, byte) in target.iter_mut().enumerate().skip(1) {
                 *byte = (2
-                    * (self
-                        .tweak
-                        .get(j)
-                        .expect("j is always in range of block size")
-                        % 128))
+                    * (self.tweak.get(j).expect("j is always in range of block size") % 128))
                     ^ select_hi_bit(
-                        *self
-                            .tweak
-                            .get(j - 1)
-                            .expect("j > 0 always because of the .skip(1)"),
+                        *self.tweak.get(j - 1).expect("j > 0 always because of the .skip(1)"),
                     );
             }
             self.tweak = target;
@@ -600,8 +570,7 @@ struct XtsEncrypterTweaked<'a, A: Aes> {
 
 impl<'a, A: Aes> XtsEncrypterTweaked<'a, A> {
     fn advance_to_next_block_num(&mut self) {
-        self.tweak_state
-            .advance_to_block(self.tweak_state.block_num + 1)
+        self.tweak_state.advance_to_block(self.tweak_state.block_num + 1)
     }
 
     /// Encrypt a block in place using the configured tweak and current block number.
@@ -624,8 +593,7 @@ struct XtsDecrypterTweaked<'a, A: Aes> {
 
 impl<'a, A: Aes> XtsDecrypterTweaked<'a, A> {
     fn advance_to_next_block_num(&mut self) {
-        self.tweak_state
-            .advance_to_block(self.tweak_state.block_num + 1)
+        self.tweak_state.advance_to_block(self.tweak_state.block_num + 1)
     }
 
     /// Get the current tweak state -- useful if needed to reset to an earlier block num.
@@ -653,11 +621,8 @@ fn array_xor(base: &mut crypto_provider::aes::AesBlock, rhs: &crypto_provider::a
     // hopefully this gets done smartly by the compiler (intel pxor, arm veorq, or equivalent).
     // This seems to happen in practice at opt level 3: https://gcc.godbolt.org/z/qvjE8joMv
     for i in 0..BLOCK_SIZE {
-        *base
-            .get_mut(i)
-            .expect("i is always a valid index for an AesBlock") ^= rhs
-            .get(i)
-            .expect("i is always a valid index for an AesBlock");
+        *base.get_mut(i).expect("i is always a valid index for an AesBlock") ^=
+            rhs.get(i).expect("i is always a valid index for an AesBlock");
     }
 }
 
@@ -668,13 +633,7 @@ fn select_hi_bit(byte: u8) -> u8 {
 }
 
 fn try_split_concat_key<const N: usize>(slice: &[u8]) -> Option<([u8; N], [u8; N])> {
-    slice
-        .get(0..N)
-        .and_then(|slice| slice.try_into().ok())
-        .and_then(|k1: [u8; N]| {
-            slice
-                .get(N..)
-                .and_then(|slice| slice.try_into().ok())
-                .map(|k2: [u8; N]| (k1, k2))
-        })
+    slice.get(0..N).and_then(|slice| slice.try_into().ok()).and_then(|k1: [u8; N]| {
+        slice.get(N..).and_then(|slice| slice.try_into().ok()).map(|k2: [u8; N]| (k1, k2))
+    })
 }

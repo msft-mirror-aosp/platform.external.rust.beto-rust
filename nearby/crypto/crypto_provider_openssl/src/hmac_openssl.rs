@@ -95,7 +95,7 @@ fn hmac_from_builder<H: OpenSslHash>(ctx: PKey<Private>) -> Hmac<H> {
     let digest = H::get_digest();
     HmacBuilder {
         ctx,
-        marker: PhantomData::default(),
+        marker: PhantomData,
         signer_builder: |ctx: &openssl::pkey::PKey<openssl::pkey::Private>| {
             Signer::new(digest, ctx).expect("should be able to create signer")
         },
@@ -110,16 +110,12 @@ fn new_from_key<const N: usize, H: OpenSslHash>(key: [u8; N]) -> Hmac<H> {
 }
 
 fn new_from_slice<H: OpenSslHash>(key: &[u8]) -> Result<Hmac<H>, InvalidLength> {
-    openssl::pkey::PKey::hmac(key)
-        .map(hmac_from_builder)
-        .map_err(|_| InvalidLength)
+    openssl::pkey::PKey::hmac(key).map(hmac_from_builder).map_err(|_| InvalidLength)
 }
 
 fn update<H: OpenSslHash>(hmac: &mut Hmac<H>, data: &[u8]) {
     hmac.with_signer_mut(|signer| {
-        signer
-            .update(data)
-            .expect("should be able to update signer");
+        signer.update(data).expect("should be able to update signer");
     })
 }
 
@@ -133,10 +129,7 @@ fn finalize<const N: usize, H: OpenSslHash>(hmac: Hmac<H>) -> [u8; N] {
 }
 
 fn verify_slice<H: OpenSslHash>(hmac: Hmac<H>, tag: &[u8]) -> Result<(), MacError> {
-    let binding = hmac
-        .borrow_signer()
-        .sign_to_vec()
-        .expect("sign to vec should succeed");
+    let binding = hmac.borrow_signer().sign_to_vec().expect("sign to vec should succeed");
     let slice = binding.as_slice();
     if memcmp::eq(slice, tag) {
         Ok(())
@@ -146,10 +139,7 @@ fn verify_slice<H: OpenSslHash>(hmac: Hmac<H>, tag: &[u8]) -> Result<(), MacErro
 }
 
 fn verify<const N: usize, H: OpenSslHash>(hmac: Hmac<H>, tag: [u8; N]) -> Result<(), MacError> {
-    let binding = hmac
-        .borrow_signer()
-        .sign_to_vec()
-        .expect("sign to vec should succeed");
+    let binding = hmac.borrow_signer().sign_to_vec().expect("sign to vec should succeed");
     let slice = binding.as_slice();
     if memcmp::eq(slice, &tag) {
         Ok(())
@@ -159,10 +149,7 @@ fn verify<const N: usize, H: OpenSslHash>(hmac: Hmac<H>, tag: [u8; N]) -> Result
 }
 
 fn verify_truncated_left<H: OpenSslHash>(hmac: Hmac<H>, tag: &[u8]) -> Result<(), MacError> {
-    let binding = hmac
-        .borrow_signer()
-        .sign_to_vec()
-        .expect("sign to vec should succeed");
+    let binding = hmac.borrow_signer().sign_to_vec().expect("sign to vec should succeed");
     let slice = binding.as_slice();
     let len = tag.len();
     if len == 0 || len > H::get_digest().block_size() {
@@ -180,7 +167,7 @@ fn verify_truncated_left<H: OpenSslHash>(hmac: Hmac<H>, tag: &[u8]) -> Result<()
 mod tests {
     use crate::Openssl;
     use core::marker::PhantomData;
-    use crypto_provider::hmac::testing::*;
+    use crypto_provider_test::hmac::*;
 
     #[apply(hmac_test_cases)]
     fn hmac_tests(testcase: CryptoProviderTestCase<Openssl>) {

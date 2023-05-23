@@ -33,8 +33,7 @@ pub fn load_data_file_contents_as_string(file: &str) -> String {
     let full_path = get_data_file(file);
     let mut file = fs::File::open(full_path).expect("Should be able to open data file");
     let mut data = String::new();
-    file.read_to_string(&mut data)
-        .expect("should be able to read data file");
+    file.read_to_string(&mut data).expect("should be able to read data file");
     data
 }
 

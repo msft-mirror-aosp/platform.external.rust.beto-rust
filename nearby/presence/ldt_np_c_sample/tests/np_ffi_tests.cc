@@ -13,25 +13,27 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
+#include <json/json.h>
 
 extern "C" {
 #include "np_ldt.h"
 }
 
 #include <algorithm>
-#include <rapidjson/document.h>
-#include <rapidjson/filereadstream.h>
+#include <fstream>
 
 // TODO: get multi threaded tests working on windows
 #ifndef _WIN32
 #include <pthread.h>
 #endif
 
-using namespace rapidjson;
 using namespace std;
 
-static const char* PATH_TO_DATA_FILE = "../../../ldt_np_adv/resources/test/np_adv_test_vectors.json";
-
+#ifdef LDT_TEST_VECTORS
+static const char* PATH_TO_DATA_FILE = LDT_TEST_VECTORS;
+#else
+static const char* PATH_TO_DATA_FILE = "np_adv_test_vectors.json";
+#endif
 static const uint8_t KEY_SEED_BYTES[] = {204, 219, 36, 137, 233, 252, 172, 66, 179, 147, 72, 184, 148, 30, 209, 154, 29, 54, 14, 117, 224, 152, 200, 193, 94, 107, 28, 194, 182, 32, 205, 57};
 static const uint8_t KNOWN_HMAC_BYTES[] = {223, 185, 10, 31, 155, 31, 226, 141, 24, 187, 204, 165, 34, 64, 181, 204, 44, 203, 95, 141, 82, 137, 163, 203, 100, 235, 53, 65, 202, 97, 75, 180};
 static const uint8_t TEST_DATA_BYTES[] = {205, 104, 63, 225, 161, 209, 248, 70, 84, 61, 10, 19, 212, 174, 164, 0, 64, 200, 214, 123};
@@ -84,24 +86,24 @@ static void bytes_to_hex_string(uint8_t * data, char * out, int len)
 // to generate the ldt_key and hmac_key from a key_seed, this is an implementation
 // detail of the rust ldt library
 TEST(NpFfiTests, TestJsonData) {
-    FILE* fp = fopen(PATH_TO_DATA_FILE, "r");
-    ASSERT_FALSE(fp == NULL);
+    Json::Value root;
+    Json::Reader reader;
+    std::ifstream test(PATH_TO_DATA_FILE);
+    bool parsingSuccessful = reader.parse( test, root, false );
+    if ( !parsingSuccessful )
+    {
+        std::cout  << reader.getFormattedErrorMessages()
+               << "\n";
+    }
+    ASSERT_TRUE(root.size() == 1000);
 
-    char readBuffer[65536];
-    FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-    Document d;
-    d.ParseStream(is);
-
-    ASSERT_TRUE(d.IsArray());
-    ASSERT_EQ(d.Size(), 1000);
-
-    for (SizeType i = 0; i < d.Size(); i++) {
-        const Value& v = d[i];
-        const char * key_seed = v["key_seed"].GetString();
-        const char * metadata_key_hmac = v["metadata_key_hmac"].GetString();
-        const char * adv_salt = v["adv_salt"].GetString();
-        const char * plaintext = v["plaintext"].GetString();
-        const char * ciphertext = v["ciphertext"].GetString();
+    for (Json::Value::ArrayIndex i = 0; i < root.size(); i++) {
+        const Json::Value& v = root[i];
+        auto key_seed = v["key_seed"].asCString();
+        auto metadata_key_hmac = v["metadata_key_hmac"].asCString();
+        auto adv_salt = v["adv_salt"].asCString();
+        auto plaintext = v["plaintext"].asCString();
+        auto ciphertext = v["ciphertext"].asCString();
 
         NpLdtKeySeed np_key_seed;
         int len = strlen(key_seed)/2;
@@ -114,17 +116,17 @@ TEST(NpFfiTests, TestJsonData) {
         ASSERT_EQ(len, 32);
 
         NpLdtEncryptHandle enc_handle = NpLdtEncryptCreate(np_key_seed);
-        ASSERT_NE(enc_handle.handle, 0);
+        ASSERT_TRUE(enc_handle.handle != 0);
 
-        NpLdtSalt salt;
+        NpLdtSalt saltdata;
         len = strlen(adv_salt)/2;
-        hex_string_to_bytes(adv_salt, salt.bytes, len);
+        hex_string_to_bytes(adv_salt, saltdata.bytes, len);
         ASSERT_TRUE(len == 2);
 
         len = strlen(plaintext)/2;
         uint8_t* buffer = (uint8_t*)malloc(len);
         hex_string_to_bytes(plaintext, buffer, len);
-        NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, buffer, len, salt);
+        NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, buffer, len, saltdata);
         ASSERT_EQ(result, NP_LDT_SUCCESS);
 
         char output[strlen(plaintext) + 1];
@@ -132,17 +134,22 @@ TEST(NpFfiTests, TestJsonData) {
         ASSERT_EQ(strcmp(output, ciphertext), 0);
 
         NpLdtDecryptHandle dec_handle = NpLdtDecryptCreate(np_key_seed, known_hmac);
-        ASSERT_NE(dec_handle.handle, 0);
+        ASSERT_TRUE(dec_handle.handle != 0);
 
-        result = NpLdtDecryptAndVerify(dec_handle, buffer, len, salt);
+        result = NpLdtDecryptAndVerify(dec_handle, buffer, len, saltdata);
+        ASSERT_EQ(result, NP_LDT_SUCCESS);
+
+        result = NpLdtEncryptClose(enc_handle);
+        ASSERT_EQ(result, NP_LDT_SUCCESS);
+
+        result = NpLdtDecryptClose(dec_handle);
         ASSERT_EQ(result, NP_LDT_SUCCESS);
 
         bytes_to_hex_string(buffer, output, len);
-        printf("output: %s\n", output);
         ASSERT_EQ( strcmp(output, plaintext), 0);
         free(buffer);
     }
-    fclose(fp);
+    test.close();
 }
 
 TEST(NpFfiTests, TestValidLength)
@@ -151,7 +158,7 @@ TEST(NpFfiTests, TestValidLength)
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
     NpLdtEncryptHandle enc_handle = create_enc_handle_from_test_key();
-    ASSERT_NE(enc_handle.handle, 0);
+    ASSERT_TRUE(enc_handle.handle != 0);
 
     NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, plaintext, 20, salt);
     ASSERT_EQ(result, NP_LDT_SUCCESS);
@@ -169,7 +176,7 @@ TEST(NpFfiTests, TestEncryptInvalidLength)
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
     NpLdtEncryptHandle enc_handle = create_enc_handle_from_test_key();
-    ASSERT_NE(enc_handle.handle, 0);
+    ASSERT_TRUE(enc_handle.handle != 0);
 
     NP_LDT_RESULT result = NpLdtEncrypt(enc_handle, plaintext, 32, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_INVALID_LENGTH);
@@ -185,7 +192,7 @@ TEST(NpFfiTests, TestDecryptInvalidLength)
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
     NpLdtDecryptHandle dec_handle = create_dec_handle_from_test_key();
-    ASSERT_NE(dec_handle.handle, 0);
+    ASSERT_TRUE(dec_handle.handle != 0);
 
     NP_LDT_RESULT result = NpLdtDecryptAndVerify(dec_handle, plaintext, 32, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_INVALID_LENGTH);
@@ -203,7 +210,7 @@ TEST(NpFfiTests, TestDecryptMacMismatch)
     memcpy(plaintext, test_text, 29);
 
     NpLdtDecryptHandle dec_handle = create_dec_handle_from_test_key();
-    ASSERT_NE(dec_handle.handle, 0);
+    ASSERT_TRUE(dec_handle.handle != 0);
 
     NP_LDT_RESULT result = NpLdtDecryptAndVerify(dec_handle, plaintext, 24, salt);
     ASSERT_EQ(result, NP_LDT_ERROR_MAC_MISMATCH);
@@ -237,14 +244,12 @@ pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 void *worker_thread(void *arg)
 {
-    int *my_id = (int *)arg;
+    (void) arg;
     pthread_mutex_lock(&my_mutex);
-    printf("Thread %d: waiting for release\n", *my_id);
 
     pthread_cond_wait(&cond, &my_mutex);
     pthread_mutex_unlock(&my_mutex);
 
-    printf("Thread %d: doing ldt stuff!\n", *my_id);
     uint8_t* plaintext = (uint8_t*) malloc(20 * sizeof(uint8_t));
     memcpy(plaintext, TEST_DATA_BYTES, 20);
 
@@ -292,7 +297,6 @@ TEST(NpFfiTests, MultiThreadedTests)
 
     // give time for all threads to lock
     sleep(1);
-    printf("Main: Now releasing the condition\n");
 
     // unleash the threads!
     pthread_cond_broadcast(&cond);

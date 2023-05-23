@@ -72,7 +72,7 @@ impl EphemeralSecret<X25519> for X25519PrivateKey {
 }
 
 #[cfg(test)]
-impl crypto_provider::elliptic_curve::EphemeralSecretForTesting<X25519> for X25519PrivateKey {
+impl crypto_provider_test::elliptic_curve::EphemeralSecretForTesting<X25519> for X25519PrivateKey {
     fn from_private_components(
         private_bytes: &[u8; 32],
         _public_key: &<Self::Impl as EcdhProvider<X25519>>::PublicKey,
@@ -93,7 +93,7 @@ impl EcdhProvider<X25519> for X25519Ecdh {
 #[cfg(test)]
 mod tests {
     use core::marker::PhantomData;
-    use crypto_provider::x25519::testing::*;
+    use crypto_provider_test::x25519::*;
 
     use super::X25519Ecdh;
 

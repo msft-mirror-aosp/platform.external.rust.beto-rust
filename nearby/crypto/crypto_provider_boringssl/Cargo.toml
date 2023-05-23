@@ -8,8 +8,8 @@ publish = false
 crypto_provider = { path = "../crypto_provider", features = ["alloc", "std"] }
 crypto_provider_stubs = { path = "../crypto_provider_stubs" }
 
-# Note: before this crate will build you need to run `scripts/prepare-boringssl.sh`
-bssl-crypto = {path = "../../../boringssl-build/boringssl/rust/bssl-crypto"}
+# Note: before this crate will work you need to run `scripts/prepare-boringssl.sh`
+bssl-crypto = {path = "../bssl-crypto"}
 
 [dev-dependencies]
-crypto_provider = {path = "../crypto_provider", features = ["std", "alloc", "testing"]}
+crypto_provider_test = {path = "../crypto_provider_test"}

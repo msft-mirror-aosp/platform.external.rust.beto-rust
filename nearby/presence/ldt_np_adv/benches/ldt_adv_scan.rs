@@ -21,6 +21,7 @@ use rand::{Rng as _, SeedableRng as _};
 use crypto_provider::CryptoProvider;
 use crypto_provider_openssl::Openssl;
 use crypto_provider_rustcrypto::RustCrypto;
+
 use np_hkdf::NpKeySeedHkdf;
 
 fn ldt_adv_scan<C: CryptoProvider>(c: &mut Criterion) {
@@ -73,10 +74,7 @@ fn find_matching_item<C: CryptoProvider>(
                 .ok()
         })
         .next()
-        .map(|(index, buffer)| MatchResult {
-            matching_index: index,
-            buffer,
-        });
+        .map(|(index, buffer)| MatchResult { matching_index: index, buffer });
 }
 
 fn build_ciphers<C: CryptoProvider>(
