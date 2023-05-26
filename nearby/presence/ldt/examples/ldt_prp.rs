@@ -22,10 +22,11 @@
 //! histogram of how many bits were flipped in the entire plaintext.
 use clap::{self, Parser as _};
 use crypto_provider::aes::BLOCK_SIZE;
+use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
 use ldt::*;
 use ldt_tbc::TweakableBlockCipher;
-use rand::{distributions, Rng as _, SeedableRng as _};
+use rand::{distributions, Rng as _};
 
 use rand_ext::*;
 use xts_aes::{XtsAes128, XtsAes256};
@@ -37,25 +38,37 @@ fn main() {
 }
 
 fn run_trials(args: Args) {
-    let mut rng = rand::rngs::StdRng::from_entropy();
+    let mut rng = seeded_rng();
     let mut histo = (0..=100).map(|_| 0_u64).collect::<Vec<_>>();
     let mut undetected_changes = 0_u64;
+    let mut cp_rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
     for _ in 0..args.trials {
-        let (percent, ok) = if rng.gen() {
-            do_trial(
-                Ldt::<16, XtsAes128<RustCrypto>, Swap>::new(&LdtKey::from_random(&mut rng)),
-                &mut rng,
-                DefaultPadder::default(),
-                &args,
-            )
-        } else {
-            do_trial(
-                Ldt::<16, XtsAes256<RustCrypto>, Swap>::new(&LdtKey::from_random(&mut rng)),
-                &mut rng,
-                DefaultPadder::default(),
-                &args,
-            )
-        };
+        let (percent, ok) =
+            if rng.gen() {
+                do_trial(
+                    LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(
+                        &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
+                    ),
+                    LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(
+                        &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
+                    ),
+                    &mut rng,
+                    DefaultPadder::default(),
+                    &args,
+                )
+            } else {
+                do_trial(
+                    LdtEncryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(
+                        &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
+                    ),
+                    LdtDecryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(
+                        &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
+                    ),
+                    &mut rng,
+                    DefaultPadder::default(),
+                    &args,
+                )
+            };
 
         histo[percent] += 1;
         if !ok {
@@ -87,22 +100,23 @@ fn run_trials(args: Args) {
 }
 
 fn do_trial<const B: usize, T: TweakableBlockCipher<B>, P: Padder<B, T>, M: Mix, R: rand::Rng>(
-    ldt: Ldt<B, T, M>,
+    ldt_enc: LdtEncryptCipher<B, T, M>,
+    ldt_dec: LdtDecryptCipher<B, T, M>,
     rng: &mut R,
     padder: P,
     args: &Args,
 ) -> (usize, bool) {
     let plaintext_len_range = distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 2 - 1);
     let len = rng.sample(plaintext_len_range);
-    let plaintext = random_vec(rng, len);
+    let plaintext = random_vec_rc(rng, len);
 
     let mut ciphertext = plaintext.clone();
-    ldt.encrypt(&mut ciphertext, &padder).unwrap();
+    ldt_enc.encrypt(&mut ciphertext, &padder).unwrap();
 
     // flip a random bit
     ciphertext[rng.gen_range(0..len)] ^= 1 << rng.gen_range(0..8);
 
-    ldt.decrypt(&mut ciphertext, &padder).unwrap();
+    ldt_dec.decrypt(&mut ciphertext, &padder).unwrap();
     assert_ne!(plaintext, ciphertext);
 
     let differing_bits: u32 = plaintext

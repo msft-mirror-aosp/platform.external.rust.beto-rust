@@ -23,7 +23,6 @@ use crypto_provider::hkdf::InvalidLength;
 use std::marker::PhantomData;
 
 /// openssl based hkdf implementation
-#[derive(Clone)]
 pub struct Hkdf<H: OpenSslHash> {
     _marker: PhantomData<H>,
     salt: Option<Vec<u8>>,
@@ -61,5 +60,17 @@ impl<H: OpenSslHash> crypto_provider::hkdf::Hkdf for Hkdf<H> {
 
     fn expand(&self, info: &[u8], okm: &mut [u8]) -> Result<(), InvalidLength> {
         self.expand_multi_info(&[info], okm)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Openssl;
+    use core::marker::PhantomData;
+    use crypto_provider::hkdf::testing::*;
+
+    #[apply(hkdf_test_cases)]
+    fn hkdf_tests(testcase: CryptoProviderTestCase<Openssl>) {
+        testcase(PhantomData);
     }
 }

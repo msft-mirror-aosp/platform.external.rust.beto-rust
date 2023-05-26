@@ -21,6 +21,9 @@ path = "../../../crypto/crypto_provider"
 [dependencies.crypto_provider_rustcrypto]
 path = "../../../crypto/crypto_provider_rustcrypto"
 
+[dependencies.ldt_tbc]
+path = "../../../presence/ldt_tbc"
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
