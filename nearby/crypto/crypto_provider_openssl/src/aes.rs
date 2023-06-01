@@ -24,14 +24,17 @@
 
 //! Implementation of `crypto_provider::aes` types using openssl's `symm` module.
 
+use openssl::symm::{Cipher, Crypter, Mode};
+
 use crypto_provider::aes::cbc::{AesCbcIv, DecryptionError};
+use crypto_provider::aes::gcm_siv::{AesGcmSiv, GcmSivError};
 use crypto_provider::aes::{
     Aes, Aes128Key, Aes256Key, AesBlock, AesCipher, AesDecryptCipher, AesEncryptCipher, AesKey,
 };
-use openssl::symm::{Cipher, Crypter, Mode};
 
 /// Uber struct which contains impls for AES-128 fns
 pub struct Aes128;
+
 impl Aes for Aes128 {
     type Key = Aes128Key;
     type EncryptCipher = Aes128Cipher;
@@ -40,6 +43,7 @@ impl Aes for Aes128 {
 
 /// Uber struct which contains impls for AES-256 fns
 pub struct Aes256;
+
 impl Aes for Aes256 {
     type Key = Aes256Key;
     type EncryptCipher = Aes256Cipher;
@@ -61,13 +65,8 @@ impl AesEncryptCipher for Aes128Cipher {
     fn encrypt(&self, block: &mut AesBlock) {
         // openssl requires the output to be at least 32 bytes long
         let mut output = [0_u8; 32];
-        let mut crypter = Crypter::new(
-            Cipher::aes_128_ecb(),
-            Mode::Encrypt,
-            self.0.as_slice(),
-            None,
-        )
-        .unwrap();
+        let mut crypter =
+            Crypter::new(Cipher::aes_128_ecb(), Mode::Encrypt, self.0.as_slice(), None).unwrap();
         crypter.pad(false);
         crypter.update(block, &mut output).unwrap();
         block.copy_from_slice(&output[..crypto_provider::aes::BLOCK_SIZE]);
@@ -78,13 +77,8 @@ impl AesDecryptCipher for Aes128Cipher {
     fn decrypt(&self, block: &mut AesBlock) {
         // openssl requires the output to be at least 32 bytes long
         let mut output = [0_u8; 32];
-        let mut crypter = Crypter::new(
-            Cipher::aes_128_ecb(),
-            Mode::Decrypt,
-            self.0.as_slice(),
-            None,
-        )
-        .unwrap();
+        let mut crypter =
+            Crypter::new(Cipher::aes_128_ecb(), Mode::Decrypt, self.0.as_slice(), None).unwrap();
         crypter.pad(false);
         crypter.update(block, &mut output).unwrap();
         block.copy_from_slice(&output[..crypto_provider::aes::BLOCK_SIZE]);
@@ -106,13 +100,8 @@ impl AesEncryptCipher for Aes256Cipher {
     fn encrypt(&self, block: &mut AesBlock) {
         // openssl requires the output to be at least 32 bytes long
         let mut output = [0_u8; 32];
-        let mut crypter = Crypter::new(
-            Cipher::aes_256_ecb(),
-            Mode::Encrypt,
-            self.0.as_slice(),
-            None,
-        )
-        .unwrap();
+        let mut crypter =
+            Crypter::new(Cipher::aes_256_ecb(), Mode::Encrypt, self.0.as_slice(), None).unwrap();
         crypter.pad(false);
         crypter.update(block, &mut output).unwrap();
         block.copy_from_slice(&output[..crypto_provider::aes::BLOCK_SIZE]);
@@ -123,13 +112,8 @@ impl AesDecryptCipher for Aes256Cipher {
     fn decrypt(&self, block: &mut AesBlock) {
         // openssl requires the output to be at least 32 bytes long
         let mut output = [0_u8; 32];
-        let mut crypter = Crypter::new(
-            Cipher::aes_256_ecb(),
-            Mode::Decrypt,
-            self.0.as_slice(),
-            None,
-        )
-        .unwrap();
+        let mut crypter =
+            Crypter::new(Cipher::aes_256_ecb(), Mode::Decrypt, self.0.as_slice(), None).unwrap();
         crypter.pad(false);
         crypter.update(block, &mut output).unwrap();
         block.copy_from_slice(&output[..crypto_provider::aes::BLOCK_SIZE]);
@@ -141,13 +125,8 @@ pub struct OpenSslAesCbcPkcs7;
 
 impl crypto_provider::aes::cbc::AesCbcPkcs7Padded for OpenSslAesCbcPkcs7 {
     fn encrypt(key: &crypto_provider::aes::Aes256Key, iv: &AesCbcIv, message: &[u8]) -> Vec<u8> {
-        openssl::symm::encrypt(
-            Cipher::aes_256_cbc(),
-            key.as_slice(),
-            Some(iv.as_slice()),
-            message,
-        )
-        .unwrap()
+        openssl::symm::encrypt(Cipher::aes_256_cbc(), key.as_slice(), Some(iv.as_slice()), message)
+            .unwrap()
     }
 
     fn decrypt(
@@ -245,13 +224,52 @@ impl crypto_provider::aes::ctr::AesCtr for OpenSslAesCtr256 {
     }
 }
 
+/// Unimplemented AES-GCM-SIV implementation.
+pub struct OpenSslAesGcmSiv128;
+
+impl AesGcmSiv for OpenSslAesGcmSiv128 {
+    type Key = Aes128Key;
+
+    fn new(_key: &Self::Key) -> Self {
+        todo!()
+    }
+
+    fn encrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
+        todo!()
+    }
+
+    fn decrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
+        todo!()
+    }
+}
+
+pub struct OpenSslAesGcmSiv256;
+
+impl AesGcmSiv for OpenSslAesGcmSiv256 {
+    type Key = Aes256Key;
+
+    fn new(_key: &Self::Key) -> Self {
+        todo!()
+    }
+
+    fn encrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
+        todo!()
+    }
+
+    fn decrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::marker::PhantomData;
-    use crypto_provider::aes::cbc::testing::*;
-    use crypto_provider::aes::ctr::testing::*;
-    use crypto_provider::aes::testing::*;
+
+    use crypto_provider_test::aes::cbc::*;
+    use crypto_provider_test::aes::ctr::*;
+    use crypto_provider_test::aes::*;
+
+    use super::*;
 
     #[apply(aes_128_ctr_test_cases)]
     fn aes_128_ctr_test(testcase: CryptoProviderTestCase<OpenSslAesCtr128>) {

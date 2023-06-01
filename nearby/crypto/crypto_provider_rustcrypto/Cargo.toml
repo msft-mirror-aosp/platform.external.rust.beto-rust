@@ -26,7 +26,7 @@ rand_chacha = { workspace = true, default-features = false, optional = true }
 
 [dev-dependencies]
 hex.workspace = true
-crypto_provider = { workspace = true, features = ["testing"] }
+crypto_provider_test.workspace = true
 crypto_provider_rustcrypto = { path = ".", features = ["std"] }
 
 [features]

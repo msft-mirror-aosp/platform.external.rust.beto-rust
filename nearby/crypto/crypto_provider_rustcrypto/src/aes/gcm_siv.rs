@@ -67,8 +67,8 @@ impl crypto_provider::aes::gcm_siv::AesGcmSiv for AesGcmSiv256 {
 mod tests {
     use core::marker::PhantomData;
 
-    use crypto_provider::aes::gcm_siv::testing::*;
-    use crypto_provider::aes::testing::*;
+    use crypto_provider_test::aes::gcm_siv::*;
+    use crypto_provider_test::aes::*;
 
     use super::*;
 

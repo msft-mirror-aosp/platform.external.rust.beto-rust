@@ -37,9 +37,10 @@ wrapper for openSSL.
 `crypto_provider_openssl` can also be made to use BoringSSL via the `boringssl` feature. This
 translates to using the `openssl` and `openssl-sys` crates' `unstable_boringssl` feature. Since the
 depenedency `bssl-sys` is not on crates.io, to test the BoringSSL integration, you'll need to run
-`scripts/prepare-boringssl.sh`, which clones BoringSSL and the Android version of `rust-openssl`.
+`cargo run -- build-boringssl`, which clones BoringSSL. Then, to use the Android version of
+`rust-openssl`, run `cargo run -- prepare-rust-openssl`.
 
-* Run `scripts/prepare-boringssl.sh` to setup the workspace
+* Run `cargo run -- build-boringssl` to setup the workspace
 * Run `cargo --config=.cargo/config-boringssl.toml test --features=boringssl` to test the crypto
   provider implementations.
 * Run `cargo --config=.cargo/config-boringssl.toml run -p <package> --features=openssl,boringssl

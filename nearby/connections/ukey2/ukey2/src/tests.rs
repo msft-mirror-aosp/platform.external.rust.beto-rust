@@ -61,10 +61,7 @@ fn advance_from_init_to_finish_client_test<C: CryptoProvider>(
     };
 
     let _client = client1
-        .advance_state(
-            &mut rng,
-            &message_data.to_wrapped_msg().write_to_bytes().unwrap(),
-        )
+        .advance_state(&mut rng, &message_data.to_wrapped_msg().write_to_bytes().unwrap())
         .unwrap();
     // TODO assertions on client state
 }
@@ -111,21 +108,15 @@ fn advance_from_init_to_complete_server_x25519_test<C: CryptoProvider>(
         };
         client_init.to_wrapped_msg()
     };
-    let server2 = server1
-        .advance_state(&mut rng, &client_init_framed.write_to_bytes().unwrap())
-        .unwrap();
+    let server2 =
+        server1.advance_state(&mut rng, &client_init_framed.write_to_bytes().unwrap()).unwrap();
     assert!(
-        !server2
-            .server_init_msg()
-            .windows(client_random.len())
-            .any(|w| w == client_random),
+        !server2.server_init_msg().windows(client_random.len()).any(|w| w == client_random),
         "Server init msg should not contain the client's random"
     );
     // TODO assertions on server2 state
     // We now move the server to the post-ClientFinished state
-    let _server = server2
-        .advance_state(&mut rng, &client_finished_bytes)
-        .unwrap();
+    let _server = server2.advance_state(&mut rng, &client_finished_bytes).unwrap();
     // TODO assertions on server state
 }
 
@@ -168,13 +159,11 @@ fn advance_from_init_to_complete_server_p256_test<C: CryptoProvider>(
         }
         .to_wrapped_msg()
     };
-    let server2 = server1
-        .advance_state(&mut rng, &client_init_framed.write_to_bytes().unwrap())
-        .unwrap();
+    let server2 =
+        server1.advance_state(&mut rng, &client_init_framed.write_to_bytes().unwrap()).unwrap();
     // TODO assertions on server2 state
-    let _server = server2
-        .advance_state(&mut rng, &client_finished_msg.write_to_bytes().unwrap())
-        .unwrap();
+    let _server =
+        server2.advance_state(&mut rng, &client_finished_msg.write_to_bytes().unwrap()).unwrap();
     // TODO assertions on server state
 }
 
@@ -196,29 +185,20 @@ fn cipher_type_discriminant() {
 fn convert_to_message_type() {
     assert_eq!(
         MessageType::ClientInit,
-        ukey::ukey2message::Type::CLIENT_INIT
-            .into_adapter()
-            .unwrap()
+        ukey::ukey2message::Type::CLIENT_INIT.into_adapter().unwrap()
     );
     assert_eq!(
         MessageType::ServerInit,
-        ukey::ukey2message::Type::SERVER_INIT
-            .into_adapter()
-            .unwrap()
+        ukey::ukey2message::Type::SERVER_INIT.into_adapter().unwrap()
     );
     assert_eq!(
         MessageType::ClientFinish,
-        ukey::ukey2message::Type::CLIENT_FINISH
-            .into_adapter()
-            .unwrap()
+        ukey::ukey2message::Type::CLIENT_FINISH.into_adapter().unwrap()
     );
 }
 
 #[test]
 fn convert_to_cipher_type() {
     assert_eq!(HandshakeCipher::P256Sha512, 100.into_adapter().unwrap());
-    assert_eq!(
-        HandshakeCipher::Curve25519Sha512,
-        200.into_adapter().unwrap()
-    );
+    assert_eq!(HandshakeCipher::Curve25519Sha512, 200.into_adapter().unwrap());
 }

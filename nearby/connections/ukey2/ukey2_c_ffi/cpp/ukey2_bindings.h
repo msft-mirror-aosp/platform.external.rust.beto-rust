@@ -29,6 +29,7 @@ typedef uint8_t Aes256Key[32];
 typedef struct {
   uint8_t* handle;
   size_t len;
+  size_t cap;
 } RustFFIByteArray;
 
 typedef struct {
@@ -36,6 +37,10 @@ typedef struct {
   size_t len;
 } CFFIByteArray;
 
+typedef struct {
+  bool success;
+  RustFFIByteArray alert_to_send;
+} CMessageParseResult;
 
 typedef enum {
   STATUS_GOOD = 0,
@@ -59,8 +64,7 @@ void rust_dealloc_ffi_byte_array(RustFFIByteArray array);
 // Common handshake methods
 bool is_handshake_complete(Ukey2HandshakeContextHandle handle);
 RustFFIByteArray get_next_handshake_message(Ukey2HandshakeContextHandle handle);
-bool can_send_payload_in_handshake_message(Ukey2HandshakeContextHandle handle);
-RustFFIByteArray parse_handshake_message(Ukey2HandshakeContextHandle handle, CFFIByteArray message);
+CMessageParseResult parse_handshake_message(Ukey2HandshakeContextHandle handle, CFFIByteArray message);
 Ukey2ConnectionContextHandle to_connection_context(Ukey2HandshakeContextHandle handle);
 RustFFIByteArray get_verification_string(Ukey2HandshakeContextHandle handle, size_t output_length);
 

@@ -18,10 +18,15 @@ use jni::objects::JClass;
 use jni::sys::{jboolean, jbyteArray, jint, jlong, JNI_TRUE};
 use jni::JNIEnv;
 use lazy_static::lazy_static;
+use lock_adapter::NoPoisonMutex;
 use rand::Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use spin::Mutex;
+
+#[cfg(not(feature = "std"))]
+use lock_adapter::spin::Mutex;
+#[cfg(feature = "std")]
+use lock_adapter::std::Mutex;
 
 use ukey2_connections::{
     D2DConnectionContextV1, D2DHandshakeContext, DecodeError, DeserializeError, HandleMessageError,
@@ -83,11 +88,8 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     if let Some(ctx) = HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
         is_complete = ctx.is_handshake_complete();
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
     }
     is_complete as jboolean
 }
@@ -121,11 +123,8 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     let next_message = if let Some(ctx) = HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
         ctx.get_next_handshake_message()
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         None
     };
     // TODO error handling
@@ -145,18 +144,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     context_handle: jlong,
     message: jbyteArray,
 ) {
-    let rust_buffer = env
-        .convert_byte_array(message)
-        .unwrap();
+    let rust_buffer = env.convert_byte_array(message).unwrap();
     let result = if let Some(ctx) = HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
-        ctx.handle_handshake_message(rust_buffer.as_slice())
-            .map_err(JniError::HandleMessageError)
+        ctx.handle_handshake_message(rust_buffer.as_slice()).map_err(JniError::HandleMessageError)
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         Err(JniError::BadHandle)
     };
     if let Err(e) = result {
@@ -186,17 +179,10 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     let result = if let Some(ctx) = HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
         ctx.to_completed_handshake()
             .map_err(|_| JniError::HandshakeError(HandshakeError::HandshakeNotComplete))
-            .map(|h| {
-                h.auth_string::<CryptoProvider>()
-                    .derive_vec(length as usize)
-                    .unwrap()
-            })
+            .map(|h| h.auth_string::<CryptoProvider>().derive_vec(length as usize).unwrap())
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         Err(JniError::BadHandle)
     };
     if let Err(e) = result {
@@ -226,8 +212,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     context_handle: jlong,
 ) -> jlong {
     let conn_context = if let Some(ctx) = HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
-        ctx.to_connection_context()
-            .map_err(JniError::HandshakeError)
+        ctx.to_connection_context().map_err(JniError::HandshakeError)
     } else {
         Err(JniError::BadHandle)
     };
@@ -263,14 +248,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     // We create the empty array here so we don't run into issues requesting a new byte array from
     // the JNI env while an exception is being thrown.
     let empty_array = env.new_byte_array(0).unwrap();
-    let result = if let Some(ctx) = CONNECTION_HANDLE_MAPPING
-        .lock()
-        .get_mut(&(context_handle as u64))
+    let result = if let Some(ctx) =
+        CONNECTION_HANDLE_MAPPING.lock().get_mut(&(context_handle as u64))
     {
         Ok(ctx.encode_message_to_peer::<CryptoProvider, _>(
-            env.convert_byte_array(payload)
-                .unwrap()
-                .as_slice(),
+            env.convert_byte_array(payload).unwrap().as_slice(),
             if associated_data.is_null() {
                 None
             } else {
@@ -284,14 +266,10 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
         Err(JniError::BadHandle)
     };
     if let Ok(ret_vec) = result {
-        env.byte_array_from_slice(ret_vec.as_slice())
-            .expect("unable to create jByteArray")
+        env.byte_array_from_slice(ret_vec.as_slice()).expect("unable to create jByteArray")
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         empty_array
     }
 }
@@ -308,14 +286,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     associated_data: jbyteArray,
 ) -> jbyteArray {
     let empty_array = env.new_byte_array(0).unwrap();
-    let result = if let Some(ctx) = CONNECTION_HANDLE_MAPPING
-        .lock()
-        .get_mut(&(context_handle as u64))
+    let result = if let Some(ctx) =
+        CONNECTION_HANDLE_MAPPING.lock().get_mut(&(context_handle as u64))
     {
         ctx.decode_message_from_peer::<CryptoProvider, _>(
-            env.convert_byte_array(message)
-                .unwrap()
-                .as_slice(),
+            env.convert_byte_array(message).unwrap().as_slice(),
             if associated_data.is_null() {
                 None
             } else {
@@ -330,8 +305,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
         Err(JniError::BadHandle)
     };
     if let Ok(message) = result {
-        env.byte_array_from_slice(message.as_slice())
-            .expect("unable to create jByteArray")
+        env.byte_array_from_slice(message.as_slice()).expect("unable to create jByteArray")
     } else {
         env.throw_new(
             "com/google/security/cryptauth/lib/securegcm/CryptoException",
@@ -356,17 +330,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     _: JClass,
     context_handle: jlong,
 ) -> jint {
-    if let Some(ctx) = CONNECTION_HANDLE_MAPPING
-        .lock()
-        .get(&(context_handle as u64))
-    {
+    if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
         ctx.get_sequence_number_for_encoding() as jint
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         -1 as jint
     }
 }
@@ -377,17 +345,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     _: JClass,
     context_handle: jlong,
 ) -> jint {
-    if let Some(ctx) = CONNECTION_HANDLE_MAPPING
-        .lock()
-        .get(&(context_handle as u64))
-    {
+    if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
         ctx.get_sequence_number_for_decoding() as jint
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         -1 as jint
     }
 }
@@ -399,18 +361,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     context_handle: jlong,
 ) -> jbyteArray {
     let empty_array = env.new_byte_array(0).unwrap();
-    if let Some(ctx) = CONNECTION_HANDLE_MAPPING
-        .lock()
-        .get(&(context_handle as u64))
-    {
-        env.byte_array_from_slice(ctx.save_session().as_slice())
-            .expect("unable to save session")
+    if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
+        env.byte_array_from_slice(ctx.save_session().as_slice()).expect("unable to save session")
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         empty_array
     }
 }
@@ -423,9 +378,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     _: JClass,
     session_info: jbyteArray,
 ) -> jlong {
-    let session_info_rust = env
-        .convert_byte_array(session_info)
-        .expect("bad session_info data");
+    let session_info_rust = env.convert_byte_array(session_info).expect("bad session_info data");
     let ctx =
         D2DConnectionContextV1::from_saved_session::<CryptoProvider>(session_info_rust.as_slice());
     if ctx.is_err() {
@@ -452,18 +405,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     context_handle: jlong,
 ) -> jbyteArray {
     let empty_array = env.new_byte_array(0).unwrap();
-    if let Some(ctx) = CONNECTION_HANDLE_MAPPING
-        .lock()
-        .get(&(context_handle as u64))
-    {
+    if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
         env.byte_array_from_slice(ctx.get_session_unique::<CryptoProvider>().as_slice())
             .expect("unable to get unique session id")
     } else {
-        env.throw_new(
-            "com/google/security/cryptauth/lib/securegcm/BadHandleException",
-            "",
-        )
-        .expect("failed to find error class");
+        env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
+            .expect("failed to find error class");
         empty_array
     }
 }

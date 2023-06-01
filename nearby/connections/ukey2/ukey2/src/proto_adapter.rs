@@ -164,10 +164,7 @@ impl IntoAdapter<CipherCommitment> for ukey::ukey2client_init::CipherCommitment 
             .commitment
             .filter(|c| !c.is_empty())
             .ok_or(ukey::ukey2alert::AlertType::BAD_HANDSHAKE_CIPHER)?;
-        Ok(CipherCommitment {
-            commitment,
-            cipher: handshake_cipher,
-        })
+        Ok(CipherCommitment { commitment, cipher: handshake_cipher })
     }
 }
 
@@ -176,9 +173,7 @@ impl IntoAdapter<ClientInit> for ukey::Ukey2ClientInit {
         if self.random().len() != 32 {
             return Err(ukey::ukey2alert::AlertType::BAD_RANDOM);
         }
-        let version: i32 = self
-            .version
-            .ok_or(ukey::ukey2alert::AlertType::BAD_VERSION)?;
+        let version: i32 = self.version.ok_or(ukey::ukey2alert::AlertType::BAD_VERSION)?;
         let next_protocol = self
             .next_protocol
             .filter(|n| !n.is_empty())
@@ -197,9 +192,7 @@ impl IntoAdapter<ClientInit> for ukey::Ukey2ClientInit {
 
 impl IntoAdapter<ServerInit> for ukey::Ukey2ServerInit {
     fn into_adapter(self) -> Result<ServerInit, ukey::ukey2alert::AlertType> {
-        let version: i32 = self
-            .version
-            .ok_or(ukey::ukey2alert::AlertType::BAD_VERSION)?;
+        let version: i32 = self.version.ok_or(ukey::ukey2alert::AlertType::BAD_VERSION)?;
         let random: [u8; 32] = self
             .random
             .and_then(|r| r.try_into().ok())
@@ -209,23 +202,16 @@ impl IntoAdapter<ServerInit> for ukey::Ukey2ServerInit {
             .ok_or(ukey::ukey2alert::AlertType::BAD_HANDSHAKE_CIPHER)
             .and_then(|code| code.value().into_adapter())?;
         // We will be handling bad pubkeys in the layers above
-        let public_key: Vec<u8> = self
-            .public_key
-            .ok_or(ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY)?;
-        Ok(ServerInit {
-            handshake_cipher,
-            version,
-            public_key,
-            random,
-        })
+        let public_key: Vec<u8> =
+            self.public_key.ok_or(ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY)?;
+        Ok(ServerInit { handshake_cipher, version, public_key, random })
     }
 }
 
 impl IntoAdapter<ClientFinished> for ukey::Ukey2ClientFinished {
     fn into_adapter(self) -> Result<ClientFinished, ukey::ukey2alert::AlertType> {
-        let public_key: Vec<u8> = self
-            .public_key
-            .ok_or(ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY)?;
+        let public_key: Vec<u8> =
+            self.public_key.ok_or(ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY)?;
         Ok(ClientFinished { public_key })
     }
 }

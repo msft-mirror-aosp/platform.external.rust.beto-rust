@@ -35,9 +35,7 @@ fn main() {
         let ldt_enc = LdtEncryptCipher::<BLOCK_SIZE, XtsAes128<RustCrypto>, Swap>::new(&key);
 
         let mut ciphertext = plaintext.clone();
-        ldt_enc
-            .encrypt(&mut ciphertext, &XorPadder::from(pad_xor))
-            .unwrap();
+        ldt_enc.encrypt(&mut ciphertext, &XorPadder::from(pad_xor)).unwrap();
 
         array.push(json!({
             "plaintext": hex::encode_upper(&plaintext),

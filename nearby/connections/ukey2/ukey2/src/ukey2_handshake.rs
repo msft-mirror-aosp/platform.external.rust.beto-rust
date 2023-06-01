@@ -158,11 +158,7 @@ impl<C: CryptoProvider> Ukey2ServerStage1<C> {
         next_protocols: hash_set::HashSet<String>,
         handshake_impl: HandshakeImplementation,
     ) -> Self {
-        Self {
-            next_protocols,
-            handshake_impl,
-            _marker: PhantomData,
-        }
+        Self { next_protocols, handshake_impl, _marker: PhantomData }
     }
 
     pub(crate) fn handle_client_init<R: rand::Rng + rand::CryptoRng>(
@@ -305,9 +301,8 @@ impl<C: CryptoProvider> Ukey2ServerStage2<C> {
             let shared_secret_bytes = match self.key_pair {
                 ServerKeyPair::Curve25519(es) => {
                     let buf = msg.public_key.into_iter().collect::<Vec<u8>>();
-                    let public_key: [u8; 32] = (&buf[..])
-                        .try_into()
-                        .map_err(|_| ClientFinishedError::BadEd25519Key)?;
+                    let public_key: [u8; 32] =
+                        (&buf[..]).try_into().map_err(|_| ClientFinishedError::BadEd25519Key)?;
                     es.diffie_hellman(
                         &<C::X25519 as EcdhProvider<X25519>>::PublicKey::from_bytes(&public_key)
                             .map_err(|_| ClientFinishedError::BadEd25519Key)?,
@@ -515,10 +510,8 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
                 (shared_secret_bytes, self.p256_client_finished_bytes)
             }
             HandshakeCipher::Curve25519Sha512 => {
-                let pub_key: [u8; 32] = server_init
-                    .public_key
-                    .try_into()
-                    .map_err(|_| ServerInitError::BadPublicKey)?;
+                let pub_key: [u8; 32] =
+                    server_init.public_key.try_into().map_err(|_| ServerInitError::BadPublicKey)?;
                 (
                     self.curve25519_secret
                         .diffie_hellman(
@@ -607,12 +600,7 @@ impl CompletedHandshake {
         shared_secret: Vec<u8>,
         next_protocol: String,
     ) -> Self {
-        Self {
-            client_init_bytes,
-            server_init_bytes,
-            shared_secret,
-            next_protocol,
-        }
+        Self { client_init_bytes, server_init_bytes, shared_secret, next_protocol }
     }
 
     /// Returns an HKDF for the UKEY2 `AUTH_STRING`.
@@ -656,16 +644,10 @@ impl<'a, C: CryptoProvider> HandshakeHkdf<'a, C> {
 
     /// Returns `None` if the provided `buf` has size > 255 * 512 bytes.
     pub fn derive_slice(&self, buf: &mut [u8]) -> Option<()> {
-        self.hkdf
-            .expand_multi_info(&[self.client_init_bytes, self.server_init_bytes], buf)
-            .ok()
+        self.hkdf.expand_multi_info(&[self.client_init_bytes, self.server_init_bytes], buf).ok()
     }
 
     fn new(client_init_bytes: &'a [u8], server_init_bytes: &'a [u8], hkdf: C::HkdfSha256) -> Self {
-        Self {
-            client_init_bytes,
-            server_init_bytes,
-            hkdf,
-        }
+        Self { client_init_bytes, server_init_bytes, hkdf }
     }
 }

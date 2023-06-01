@@ -52,9 +52,7 @@ where
     Le<<D::Core as BlockSizeUser>::BlockSize, U256>: NonZero,
 {
     fn new(salt: Option<&[u8]>, ikm: &[u8]) -> Self {
-        Hkdf {
-            hkdf_impl: hkdf::Hkdf::new(salt, ikm),
-        }
+        Hkdf { hkdf_impl: hkdf::Hkdf::new(salt, ikm) }
     }
 
     fn expand_multi_info(
@@ -62,9 +60,7 @@ where
         info_components: &[&[u8]],
         okm: &mut [u8],
     ) -> Result<(), InvalidLength> {
-        self.hkdf_impl
-            .expand_multi_info(info_components, okm)
-            .map_err(|_| InvalidLength)
+        self.hkdf_impl.expand_multi_info(info_components, okm).map_err(|_| InvalidLength)
     }
 
     fn expand(&self, info: &[u8], okm: &mut [u8]) -> Result<(), InvalidLength> {
@@ -76,7 +72,7 @@ where
 mod tests {
     use crate::RustCrypto;
     use core::marker::PhantomData;
-    use crypto_provider::hkdf::testing::*;
+    use crypto_provider_test::hkdf::*;
 
     #[apply(hkdf_test_cases)]
     fn hkdf_tests(testcase: CryptoProviderTestCase<RustCrypto>) {

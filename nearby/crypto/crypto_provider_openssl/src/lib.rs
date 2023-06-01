@@ -17,11 +17,12 @@
 //! Crate which provides impls for CryptoProvider backed by openssl
 
 use cfg_if::cfg_if;
-use crypto_provider::CryptoRng;
 pub use openssl;
 use openssl::hash::MessageDigest;
 use openssl::md::MdRef;
 use openssl::rand::rand_bytes;
+
+use crypto_provider::CryptoRng;
 
 /// Contains the openssl backed AES implementations for CryptoProvider
 mod aes;
@@ -79,6 +80,8 @@ impl crypto_provider::CryptoProvider for Openssl {
     type AesCtr128 = aes::OpenSslAesCtr128;
     type AesCtr256 = aes::OpenSslAesCtr256;
     type Ed25519 = ed25519::Ed25519;
+    type Aes128GcmSiv = aes::OpenSslAesGcmSiv128;
+    type Aes256GcmSiv = aes::OpenSslAesGcmSiv256;
     type CryptoRng = OpenSslRng;
 
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -107,10 +110,12 @@ impl CryptoRng for OpenSslRng {
 
 #[cfg(test)]
 mod tests {
-    use crate::Openssl;
     use core::marker::PhantomData;
-    use crypto_provider::sha2::testing::*;
-    use crypto_provider::testing::*;
+
+    use crypto_provider_test::sha2::*;
+    use crypto_provider_test::*;
+
+    use crate::Openssl;
 
     #[apply(sha2_test_cases)]
     fn sha2_tests(testcase: CryptoProviderTestCase<Openssl>) {

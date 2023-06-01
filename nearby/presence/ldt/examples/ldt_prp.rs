@@ -53,7 +53,7 @@ fn run_trials(args: Args) {
                         &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
                     ),
                     &mut rng,
-                    DefaultPadder::default(),
+                    DefaultPadder,
                     &args,
                 )
             } else {
@@ -65,7 +65,7 @@ fn run_trials(args: Args) {
                         &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
                     ),
                     &mut rng,
-                    DefaultPadder::default(),
+                    DefaultPadder,
                     &args,
                 )
             };
