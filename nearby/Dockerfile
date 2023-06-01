@@ -16,7 +16,7 @@ FROM ubuntu:22.10
 
 # install system deps
 RUN apt-get update && apt-get install -y build-essential cmake gcc wget vim \
-clang git checkinstall zlib1g-dev rapidjson-dev libbenchmark-dev curl \
+clang git checkinstall zlib1g-dev libjsoncpp-dev libbenchmark-dev curl \
 protobuf-compiler pkg-config libdbus-1-dev libssl-dev ninja-build
 RUN apt upgrade -y
 
@@ -31,14 +31,16 @@ RUN cargo install cargo-prefetch \
     --rev f6affa68e950275f9fd773f2646ab7ee4db82897 \
     --color never 2>&1
 # needed for generating boringssl bindings
-RUN cargo install bindgen-cli
+# Must use 0.64.0, as version >= 0.65.0 removes the option "--size_t-is-usize", an option
+# used by boringssl when generating rust bindings
+RUN cargo install bindgen-cli --version 0.64.0
 RUN rustup toolchain add nightly
+# boringssl build wants go
 RUN curl -L https://go.dev/dl/go1.20.2.linux-amd64.tar.gz | tar -C /usr/local -xz
 ENV PATH="$PATH:/usr/local/go/bin"
-RUN go install github.com/google/addlicense@latest
 
 # when the image runs build and test everything to ensure env is setup correctly
-CMD ["./scripts/check-everything.sh"]
+CMD ["cargo", "run", "--", "check-everything"]
 
 # needed for boringssl git operations
 RUN git config --global user.email "docker@example.com"

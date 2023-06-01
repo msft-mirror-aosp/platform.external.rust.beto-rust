@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-crypto_provider = { path = "../crypto_provider", features = ["alloc", "std"] }
+crypto_provider = { path = "../crypto_provider", default-features = false, features = ["alloc", "std"] }
 openssl.workspace = true
 cfg-if.workspace = true
 
@@ -13,9 +13,9 @@ ouroboros = "0.15.5"
 
 [features]
 default = []
-boringssl = ["openssl/unstable_boringssl"]
+boringssl = ["openssl/unstable_boringssl", "crypto_provider/gcm_siv"]
 
 [dev-dependencies]
-crypto_provider = { path = "../crypto_provider", features = ["testing"] }
-rstest = "0.16.0"
+crypto_provider_test.workspace = true
+rstest.workspace = true
 hex-literal.workspace = true

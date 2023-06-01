@@ -70,9 +70,7 @@ impl crypto_provider::hmac::Hmac<32> for Hmac<sha2::Sha256> {
     }
 
     fn verify_truncated_left(self, tag: &[u8]) -> Result<(), MacError> {
-        self.hmac_impl
-            .verify_truncated_left(tag)
-            .map_err(|_| MacError)
+        self.hmac_impl.verify_truncated_left(tag).map_err(|_| MacError)
     }
 }
 
@@ -107,9 +105,7 @@ impl crypto_provider::hmac::Hmac<64> for Hmac<sha2::Sha512> {
     }
 
     fn verify_truncated_left(self, tag: &[u8]) -> Result<(), MacError> {
-        self.hmac_impl
-            .verify_truncated_left(tag)
-            .map_err(|_| MacError)
+        self.hmac_impl.verify_truncated_left(tag).map_err(|_| MacError)
     }
 }
 
@@ -117,7 +113,7 @@ impl crypto_provider::hmac::Hmac<64> for Hmac<sha2::Sha512> {
 mod tests {
     use crate::RustCrypto;
     use core::marker::PhantomData;
-    use crypto_provider::hmac::testing::*;
+    use crypto_provider_test::hmac::*;
 
     #[apply(hmac_test_cases)]
     fn hmac_tests(testcase: CryptoProviderTestCase<RustCrypto>) {

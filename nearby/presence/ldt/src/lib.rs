@@ -16,12 +16,10 @@
 
 #![no_std]
 #![forbid(unsafe_code)]
-#![deny(
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::expect_used
-)]
+#![deny(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic, clippy::expect_used)]
+
+#[cfg(feature = "std")]
+extern crate std;
 
 use core::{fmt, marker::PhantomData};
 use crypto_provider::CryptoProvider;
@@ -47,7 +45,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtEncryptCipher<B, T, 
         LdtEncryptCipher {
             cipher_1: T::EncryptionCipher::new(&key.key_1),
             cipher_2: T::EncryptionCipher::new(&key.key_2),
-            mix_phantom: PhantomData::default(),
+            mix_phantom: PhantomData,
         }
     }
 
@@ -58,7 +56,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtEncryptCipher<B, T, 
     /// # Errors
     /// - if `data` has a length outside of `[B, B * 2)`.
     pub fn encrypt<P: Padder<B, T>>(&self, data: &mut [u8], padder: &P) -> Result<(), LdtError> {
-        do_ldt::<B, T, M, _, _, _, P>(
+        do_ldt::<B, T, _, _, _, P>(
             data,
             |cipher, tweak, block| cipher.encrypt(tweak, block),
             padder,
@@ -88,7 +86,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtDecryptCipher<B, T, 
         LdtDecryptCipher {
             cipher_1: T::DecryptionCipher::new(&key.key_1),
             cipher_2: T::DecryptionCipher::new(&key.key_2),
-            mix_phantom: PhantomData::default(),
+            mix_phantom: PhantomData,
         }
     }
 
@@ -99,7 +97,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtDecryptCipher<B, T, 
     /// # Errors
     /// - if `data` has a length outside of `[B, B * 2)`.
     pub fn decrypt<P: Padder<B, T>>(&self, data: &mut [u8], padder: &P) -> Result<(), LdtError> {
-        do_ldt::<B, T, M, _, _, _, P>(
+        do_ldt::<B, T, _, _, _, P>(
             data,
             |cipher, tweak, block| cipher.decrypt(tweak, block),
             padder,
@@ -113,7 +111,7 @@ impl<const B: usize, T: TweakableBlockCipher<B>, M: Mix> LdtDecryptCipher<B, T, 
 
 // internal implementation of ldt cipher operations, re-used by encryption and decryption, by providing
 // the corresponding cipher_op and mix operation
-fn do_ldt<const B: usize, T, M, O, C, X, P>(
+fn do_ldt<const B: usize, T, O, C, X, P>(
     data: &mut [u8],
     cipher_op: O,
     padder: &P,
@@ -123,7 +121,6 @@ fn do_ldt<const B: usize, T, M, O, C, X, P>(
 ) -> Result<(), LdtError>
 where
     T: TweakableBlockCipher<B>,
-    M: Mix,
     // Encrypt or decrypt in place with a tweak
     O: Fn(&C, T::Tweak, &mut [u8; B]),
     // Mix a/b into block-sized chunks
@@ -161,12 +158,8 @@ where
         z_c3
     };
     let len = data.len();
-    data.get_mut(0..B)
-        .ok_or(LdtError::InvalidLength(len))?
-        .copy_from_slice(&c1);
-    data.get_mut(B..)
-        .ok_or(LdtError::InvalidLength(len))?
-        .copy_from_slice(&c2[B - s..]);
+    data.get_mut(0..B).ok_or(LdtError::InvalidLength(len))?.copy_from_slice(&c1);
+    data.get_mut(B..).ok_or(LdtError::InvalidLength(len))?.copy_from_slice(&c2[B - s..]);
 
     Ok(())
 }
@@ -182,10 +175,9 @@ pub enum LdtError {
 impl fmt::Display for LdtError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LdtError::InvalidLength(len) => write!(
-                f,
-                "Invalid length ({len}), must be in [block size, 2 * block size)"
-            ),
+            LdtError::InvalidLength(len) => {
+                write!(f, "Invalid length ({len}), must be in [block size, 2 * block size)")
+            }
         }
     }
 }

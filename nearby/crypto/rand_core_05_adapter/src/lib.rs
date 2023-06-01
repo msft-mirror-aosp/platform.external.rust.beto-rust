@@ -51,9 +51,7 @@ impl<'r, R: rand::RngCore + rand::CryptoRng> rand_core05::RngCore for RandWrappe
 
     #[cfg(feature = "std")]
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core05::Error> {
-        self.rng
-            .try_fill_bytes(dest)
-            .map_err(|e| rand_core05::Error::new(e.take_inner()))
+        self.rng.try_fill_bytes(dest).map_err(|e| rand_core05::Error::new(e.take_inner()))
     }
 
     #[cfg(not(feature = "std"))]

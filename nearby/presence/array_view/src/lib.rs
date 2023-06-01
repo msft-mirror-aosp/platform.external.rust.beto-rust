@@ -23,6 +23,9 @@
     clippy::expect_used
 )]
 
+#[cfg(feature = "std")]
+extern crate std;
+
 use core::{borrow, fmt};
 
 /// A view into the first `len` elements of an array.
@@ -42,6 +45,16 @@ impl<T: fmt::Debug, const N: usize> fmt::Debug for ArrayView<T, N> {
 }
 
 impl<T, const N: usize> ArrayView<T, N> {
+    /// A version of [`ArrayView#try_from_array`] which panics if `len > buffer.len()`,
+    /// suitable for usage in `const` contexts.
+    pub const fn const_from_array(array: [T; N], len: usize) -> ArrayView<T, N> {
+        if N < len {
+            panic!("Invalid const ArrayView");
+        } else {
+            ArrayView { array, len }
+        }
+    }
+
     /// Create an [ArrayView] of the first `len` elements of `buffer`.
     ///
     /// Returns `None` if `len > buffer.len()`.
@@ -78,10 +91,7 @@ impl<T: Default + Copy, const N: usize> ArrayView<T, N> {
         } else {
             let mut array = [T::default(); N];
             array[..slice.len()].copy_from_slice(slice);
-            Some(ArrayView {
-                array,
-                len: slice.len(),
-            })
+            Some(ArrayView { array, len: slice.len() })
         }
     }
 }
@@ -110,10 +120,7 @@ mod tests {
     fn debug_only_shows_len_elements() {
         assert_eq!(
             "[1, 2]",
-            &format!(
-                "{:?}",
-                ArrayView::try_from_array([1, 2, 3, 4, 5], 2).unwrap()
-            )
+            &format!("{:?}", ArrayView::try_from_array([1, 2, 3, 4, 5], 2).unwrap())
         );
     }
 
