@@ -16,19 +16,9 @@
 
 //! Helper crate for common functions used in testing
 
-#[cfg(blaze)]
-extern crate runfiles;
-
-#[cfg(blaze)]
-pub fn get_data_file(file: &str) -> std::path::PathBuf {
-    let r = runfiles::Runfiles::create().unwrap();
-    r.rlocation("google3/third_party/nearby_rust/".to_owned() + file)
-}
-
 use std::fs;
 use std::io::Read;
 
-#[cfg(not(blaze))]
 /// Returns data file path for specific build system. Input is the path to the file relative to the
 /// workspace root dir
 pub fn get_data_file(file: &str) -> std::path::PathBuf {
@@ -37,13 +27,20 @@ pub fn get_data_file(file: &str) -> std::path::PathBuf {
     full_path
 }
 
-/// Opens a json file at the specified path and parses it into a value
-pub fn parse_json_data_file(file: &str) -> serde_json::Value {
+/// Opens a file at the specified path (relative to the workspace root)
+/// and yields its contents as a string
+pub fn load_data_file_contents_as_string(file: &str) -> String {
     let full_path = get_data_file(file);
     let mut file = fs::File::open(full_path).expect("Should be able to open data file");
     let mut data = String::new();
     file.read_to_string(&mut data)
         .expect("should be able to read data file");
+    data
+}
+
+/// Opens a json file at the specified path and parses it into a value
+pub fn parse_json_data_file(file: &str) -> serde_json::Value {
+    let data = load_data_file_contents_as_string(file);
     serde_json::de::from_str(data.as_str()).expect("should be able to parse json date file")
 }
 

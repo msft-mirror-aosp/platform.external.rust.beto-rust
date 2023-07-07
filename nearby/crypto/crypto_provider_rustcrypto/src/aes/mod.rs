@@ -15,69 +15,89 @@
 //! Implementation of `crypto_provider::aes` types using RustCrypto's `aes`.
 #![forbid(unsafe_code)]
 
-/// Module implementing AES-CBC.
-#[cfg(feature = "alloc")]
-pub(crate) mod cbc;
-
 use aes::cipher::{
     generic_array, BlockDecrypt as _, BlockEncrypt as _, KeyInit as _, KeyIvInit as _,
     StreamCipher as _,
 };
-use crypto_provider::aes::AesKey as _;
 
-/// Wrapper around Rust Crypto's AES-128 impl
-pub struct Aes128 {
-    aes: aes::Aes128,
+use crypto_provider::aes::{
+    Aes, Aes128Key, Aes256Key, AesBlock, AesCipher, AesDecryptCipher, AesEncryptCipher, AesKey,
+};
+
+/// Module implementing AES-CBC.
+#[cfg(feature = "alloc")]
+pub(crate) mod cbc;
+#[cfg(feature = "gcm_siv")]
+pub(crate) mod gcm_siv;
+
+/// Rust crypto implementation of AES-128
+pub struct Aes128;
+impl Aes for Aes128 {
+    type Key = Aes128Key;
+    type EncryptCipher = Aes128Cipher;
+    type DecryptCipher = Aes128Cipher;
 }
 
-/// Wrapper around Rust Crypto's AES-256 impl
-pub struct Aes256 {
-    aes: aes::Aes256,
+/// Rust crypto implementation of AES-256
+pub struct Aes256;
+impl Aes for Aes256 {
+    type Key = Aes256Key;
+    type EncryptCipher = Aes256Cipher;
+    type DecryptCipher = Aes256Cipher;
 }
 
-impl crypto_provider::aes::Aes for Aes128 {
-    type Key = crypto_provider::aes::Aes128Key;
+/// A Rust Crypto AES-128 cipher used for encryption and decryption
+pub struct Aes128Cipher(aes::Aes128);
+
+impl AesCipher for Aes128Cipher {
+    type Key = Aes128Key;
 
     fn new(key: &Self::Key) -> Self {
-        Aes128 {
-            aes: aes::Aes128::new(key.as_array().into()),
-        }
+        Self(aes::Aes128::new(key.as_array().into()))
     }
+}
 
-    fn encrypt(&self, block: &mut crypto_provider::aes::AesBlock) {
-        self.aes
+impl AesEncryptCipher for Aes128Cipher {
+    fn encrypt(&self, block: &mut AesBlock) {
+        self.0
             .encrypt_block(generic_array::GenericArray::from_mut_slice(
                 block.as_mut_slice(),
             ));
     }
+}
 
-    fn decrypt(&self, block: &mut crypto_provider::aes::AesBlock) {
-        self.aes
+impl AesDecryptCipher for Aes128Cipher {
+    fn decrypt(&self, block: &mut AesBlock) {
+        self.0
             .decrypt_block(generic_array::GenericArray::from_mut_slice(
                 block.as_mut_slice(),
             ))
     }
 }
 
-// identical to Aes128 impl
-impl crypto_provider::aes::Aes for Aes256 {
-    type Key = crypto_provider::aes::Aes256Key;
+/// A Rust Crypto AES-256 cipher used for encryption and decryption
+pub struct Aes256Cipher(aes::Aes256);
+
+impl AesCipher for Aes256Cipher {
+    type Key = Aes256Key;
 
     fn new(key: &Self::Key) -> Self {
-        Aes256 {
-            aes: aes::Aes256::new(key.as_array().into()),
-        }
+        Self(aes::Aes256::new(key.as_array().into()))
     }
+}
 
-    fn encrypt(&self, block: &mut crypto_provider::aes::AesBlock) {
-        self.aes
+impl AesEncryptCipher for Aes256Cipher {
+    fn encrypt(&self, block: &mut AesBlock) {
+        self.0
             .encrypt_block(generic_array::GenericArray::from_mut_slice(
                 block.as_mut_slice(),
             ));
     }
+}
 
-    fn decrypt(&self, block: &mut crypto_provider::aes::AesBlock) {
-        self.aes
+impl AesDecryptCipher for Aes256Cipher {
+    fn decrypt(&self, block: &mut AesBlock) {
+        self.0
             .decrypt_block(generic_array::GenericArray::from_mut_slice(
                 block.as_mut_slice(),
             ))
@@ -132,10 +152,12 @@ impl crypto_provider::aes::ctr::AesCtr for AesCtr256 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::marker::PhantomData;
+
     use crypto_provider::aes::ctr::testing::*;
     use crypto_provider::aes::testing::*;
+
+    use super::*;
 
     #[apply(aes_128_ctr_test_cases)]
     fn aes_128_ctr_test(testcase: CryptoProviderTestCase<AesCtr128>) {
@@ -147,13 +169,23 @@ mod tests {
         testcase(PhantomData);
     }
 
-    #[apply(aes_128_test_cases)]
-    fn aes_128_test(testcase: CryptoProviderTestCase<Aes128>) {
+    #[apply(aes_128_encrypt_test_cases)]
+    fn aes_128_encrypt_test(testcase: CryptoProviderTestCase<Aes128Cipher>) {
         testcase(PhantomData);
     }
 
-    #[apply(aes_256_test_cases)]
-    fn aes_256_test(testcase: CryptoProviderTestCase<Aes256>) {
+    #[apply(aes_128_decrypt_test_cases)]
+    fn aes_128_decrypt_test(testcase: CryptoProviderTestCase<Aes128Cipher>) {
+        testcase(PhantomData);
+    }
+
+    #[apply(aes_256_encrypt_test_cases)]
+    fn aes_256_encrypt_test(testcase: CryptoProviderTestCase<Aes256Cipher>) {
+        testcase(PhantomData);
+    }
+
+    #[apply(aes_256_decrypt_test_cases)]
+    fn aes_256_decrypt_test(testcase: CryptoProviderTestCase<Aes256Cipher>) {
         testcase(PhantomData);
     }
 }

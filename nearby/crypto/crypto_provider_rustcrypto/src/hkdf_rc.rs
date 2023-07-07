@@ -22,7 +22,6 @@ use hmac::digest::typenum::{IsLess, Le, NonZero};
 use hmac::digest::{HashMarker, OutputSizeUser};
 
 /// RustCrypto based hkdf implementation
-#[derive(Clone)]
 pub struct Hkdf<D>
 where
     D: OutputSizeUser,
@@ -70,5 +69,17 @@ where
 
     fn expand(&self, info: &[u8], okm: &mut [u8]) -> Result<(), InvalidLength> {
         self.hkdf_impl.expand(info, okm).map_err(|_| InvalidLength)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::RustCrypto;
+    use core::marker::PhantomData;
+    use crypto_provider::hkdf::testing::*;
+
+    #[apply(hkdf_test_cases)]
+    fn hkdf_tests(testcase: CryptoProviderTestCase<RustCrypto>) {
+        testcase(PhantomData);
     }
 }

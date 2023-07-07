@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 #![no_std]
 #![deny(
     missing_docs,
@@ -25,45 +26,52 @@
 
 //! Rust ffi wrapper of ldt_np_adv, can be called from C/C++ Clients
 
-#[cfg(test)]
-mod tests;
+mod handle_map;
 
-// Allow using Box in no_std
 extern crate alloc;
 
-// if the std feature is turned on we will bring in the std library for allocating and panicking
-#[cfg(feature = "std")]
-extern crate std;
-
-// Test pulls in std which causes duplicate errors
-#[cfg(not(test))]
-#[cfg(not(feature = "std"))]
-mod no_std;
-
-use alloc::{boxed::Box, collections::btree_map::BTreeMap};
+use crate::handle_map::get_dec_handle_map;
+use alloc::boxed::Box;
 use core::slice;
-use lazy_static::lazy_static;
-use ldt_np_adv::*;
-use rand_chacha::{
-    rand_core::{RngCore, SeedableRng},
-    ChaCha20Rng,
+use handle_map::get_enc_handle_map;
+use ldt_np_adv::{
+    build_np_adv_decrypter_from_key_seed, salt_padder, LdtAdvDecryptError, LdtEncrypterXtsAes128,
+    LdtNpAdvDecrypterXtsAes128, LegacySalt,
 };
-use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unaligned};
+use np_hkdf::NpKeySeedHkdf;
 
-#[cfg(feature = "openssl")]
-use crypto_provider_openssl::Openssl as CryptoProviderImpl;
-
-#[cfg(not(feature = "openssl"))]
-use crypto_provider_rustcrypto::RustCrypto as CryptoProviderImpl;
-
-type LdtAdvDecrypterAes128 = LdtAdvDecrypterAes<CryptoProviderImpl>;
-
-// Global hashmap to track valid pointers, this is a safety precaution to make sure we are not
-// reading from unsafe memory address's passed in by caller.
-lazy_static! {
-    static ref HANDLE_MAP: spin::Mutex<BTreeMap<u64, Box<LdtAdvDecrypterAes128>>> =
-        spin::Mutex::new(BTreeMap::new());
+// Pull in the needed deps for std vs no_std
+cfg_if::cfg_if! {
+    // Test pulls in std which causes duplicate errors
+    if #[cfg(any(feature = "std", test, feature = "boringssl", feature = "openssl"))] {
+        extern crate std;
+    } else {
+        // Allow using Box in no_std
+        mod no_std;
+    }
 }
+
+// Fail early for invalid combination of feature flags, we need at least one crypto library specified
+#[cfg(all(
+    not(feature = "openssl"),
+    not(feature = "crypto_provider_rustcrypto"),
+    not(feature = "boringssl")
+))]
+compile_error!("Either the \"openssl\", \"boringssl\"or \"default\" features flag needs to be set in order to specify cryptographic library");
+
+// Need to have one of the crypto provider impls
+cfg_if::cfg_if! {
+    if #[cfg(feature = "openssl")] {
+        use crypto_provider_openssl::Openssl as CryptoProviderImpl;
+    } else if #[cfg(feature = "boringssl")]{
+        use crypto_provider_boringssl::Boringssl as CryptoProviderImpl;
+    } else {
+        use crypto_provider_rustcrypto::RustCrypto as CryptoProviderImpl;
+    }
+}
+
+pub(crate) type LdtAdvDecrypter = LdtNpAdvDecrypterXtsAes128<CryptoProviderImpl>;
+pub(crate) type LdtAdvEncrypter = LdtEncrypterXtsAes128<CryptoProviderImpl>;
 
 const SUCCESS: i32 = 0;
 
@@ -77,48 +85,58 @@ struct NpMetadataKeyHmac {
     bytes: [u8; 32],
 }
 
-#[derive(Unaligned, FromBytes, AsBytes, Debug, PartialEq)]
-#[repr(C)]
-struct NpLdtAesBlock {
-    bytes: [u8; 16],
-}
-
 #[repr(C)]
 struct NpLdtSalt {
     bytes: [u8; 2],
 }
 
-#[no_mangle]
-extern "C" fn NpLdtCreate(key_seed: NpLdtKeySeed, metadata_key_hmac: NpMetadataKeyHmac) -> u64 {
-    // check the alignment of the platform, if it is wrong return 0
-    let mut test_block = [0u8; 16];
-    if LayoutVerified::<&mut [u8], NpLdtAesBlock>::new_unaligned(test_block.as_mut_slice())
-        .is_none()
-    {
-        return 0;
-    }
+#[repr(C)]
+struct NpLdtEncryptHandle {
+    handle: u64,
+}
 
-    let ldt_adv_cipher_config = LdtAdvCipherConfig::new(key_seed.bytes, metadata_key_hmac.bytes);
-    let cipher = ldt_adv_cipher_config.build_adv_decrypter_xts_aes_128::<CryptoProviderImpl>();
-
-    let mut seed = [0u8; 32];
-    getrandom::getrandom(&mut seed)
-        .map(|_| {
-            let mut rng = ChaCha20Rng::from_seed(seed);
-            let handle: u64 = rng.next_u64();
-            let cipher = Box::new(cipher);
-            HANDLE_MAP.lock().insert(handle, cipher);
-            handle
-        })
-        .unwrap_or(0)
+#[repr(C)]
+struct NpLdtDecryptHandle {
+    handle: u64,
 }
 
 #[no_mangle]
-extern "C" fn NpLdtClose(handle: u64) -> i32 {
+extern "C" fn NpLdtDecryptCreate(
+    key_seed: NpLdtKeySeed,
+    metadata_key_hmac: NpMetadataKeyHmac,
+) -> NpLdtDecryptHandle {
+    let cipher = build_np_adv_decrypter_from_key_seed(
+        &NpKeySeedHkdf::new(&key_seed.bytes),
+        metadata_key_hmac.bytes,
+    );
+    let handle = get_dec_handle_map().insert::<CryptoProviderImpl>(Box::new(cipher));
+    NpLdtDecryptHandle { handle }
+}
+
+#[no_mangle]
+extern "C" fn NpLdtEncryptCreate(key_seed: NpLdtKeySeed) -> NpLdtEncryptHandle {
+    let cipher = LdtAdvEncrypter::new(
+        &NpKeySeedHkdf::<CryptoProviderImpl>::new(&key_seed.bytes).legacy_ldt_key(),
+    );
+    let handle = get_enc_handle_map().insert::<CryptoProviderImpl>(Box::new(cipher));
+    NpLdtEncryptHandle { handle }
+}
+
+#[no_mangle]
+extern "C" fn NpLdtEncryptClose(handle: NpLdtEncryptHandle) -> i32 {
     map_to_error_code(|| {
-        HANDLE_MAP
-            .lock()
-            .remove(&handle)
+        get_enc_handle_map()
+            .remove(&handle.handle)
+            .ok_or(CloseCipherError::InvalidHandle)
+            .map(|_| 0)
+    })
+}
+
+#[no_mangle]
+extern "C" fn NpLdtDecryptClose(handle: NpLdtDecryptHandle) -> i32 {
+    map_to_error_code(|| {
+        get_dec_handle_map()
+            .remove(&handle.handle)
             .ok_or(CloseCipherError::InvalidHandle)
             .map(|_| 0)
     })
@@ -129,7 +147,7 @@ extern "C" fn NpLdtClose(handle: u64) -> i32 {
 // and get rid of this.
 #[allow(deprecated)]
 extern "C" fn NpLdtEncrypt(
-    handle: u64,
+    handle: NpLdtEncryptHandle,
     buffer: *mut u8,
     buffer_len: usize,
     salt: NpLdtSalt,
@@ -137,9 +155,8 @@ extern "C" fn NpLdtEncrypt(
     map_to_error_code(|| {
         let data = unsafe { slice::from_raw_parts_mut(buffer, buffer_len) };
         let padder = salt_padder::<16, CryptoProviderImpl>(LegacySalt::from(salt.bytes));
-        HANDLE_MAP
-            .lock()
-            .get(&handle)
+        get_enc_handle_map()
+            .get(&handle.handle)
             .map(|cipher| {
                 cipher
                     .encrypt(data, &padder)
@@ -154,7 +171,7 @@ extern "C" fn NpLdtEncrypt(
 
 #[no_mangle]
 extern "C" fn NpLdtDecryptAndVerify(
-    handle: u64,
+    handle: NpLdtDecryptHandle,
     buffer: *mut u8,
     buffer_len: usize,
     salt: NpLdtSalt,
@@ -162,9 +179,9 @@ extern "C" fn NpLdtDecryptAndVerify(
     map_to_error_code(|| {
         let data = unsafe { slice::from_raw_parts_mut(buffer, buffer_len) };
         let padder = salt_padder::<16, CryptoProviderImpl>(LegacySalt::from(salt.bytes));
-        HANDLE_MAP
-            .lock()
-            .get(&handle)
+
+        get_dec_handle_map()
+            .get(&handle.handle)
             .map(|cipher| {
                 cipher
                     .decrypt_and_verify(data, &padder)

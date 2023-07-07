@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/// Implementation compatible with Java's
+/// [`Object.hashCode()`](https://docs.oracle.com/javase/7/docs/api/java/lang/Object.html#hashCode()).
 pub(crate) fn hash_code(input: &[u8]) -> i32 {
     input.iter().fold(1_i32, |acc, &byte| {
         31_i32.wrapping_mul(acc).wrapping_add(byte as i8 as i32)

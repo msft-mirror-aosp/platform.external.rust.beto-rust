@@ -13,7 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 use arbitrary::Arbitrary;
 use crypto_provider_rustcrypto::RustCrypto;
 use libfuzzer_sys::fuzz_target;
@@ -22,7 +21,6 @@ use ukey2_connections::HandshakeImplementation;
 use ukey2_connections::{
     D2DHandshakeContext, InitiatorD2DHandshakeContext, ServerD2DHandshakeContext,
 };
-use ukey2_rs::error_handler::NoOpHandler;
 
 #[derive(Debug, Arbitrary)]
 struct FuzzInput<'a> {
@@ -34,14 +32,12 @@ struct FuzzInput<'a> {
 }
 
 fuzz_target!(|input: FuzzInput| {
-    let mut initiator_ctx = InitiatorD2DHandshakeContext::<RustCrypto, _, _>::new_impl(
+    let mut initiator_ctx = InitiatorD2DHandshakeContext::<RustCrypto, _>::new_impl(
         HandshakeImplementation::Spec,
-        NoOpHandler::default(),
         rand_chacha::ChaChaRng::from_seed(input.client_rng_seed),
     );
-    let mut server_ctx = ServerD2DHandshakeContext::<RustCrypto, _, _>::new_impl(
+    let mut server_ctx = ServerD2DHandshakeContext::<RustCrypto, _>::new_impl(
         HandshakeImplementation::Spec,
-        NoOpHandler::default(),
         rand_chacha::ChaChaRng::from_seed(input.server_rng_seed),
     );
     let client_init = initiator_ctx
