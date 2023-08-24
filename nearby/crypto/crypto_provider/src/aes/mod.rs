@@ -16,17 +16,12 @@
 //!
 //! The design is an attempt to make it easy to provide implementations that are both idiomatic
 //! Rust (e.g. RustCrypto) as well as FFI-backed (e.g. openssl and other C impls).
-#![forbid(unsafe_code)]
-#![deny(missing_docs)]
-
 use core::{array, fmt};
 
 pub mod ctr;
 
 #[cfg(feature = "alloc")]
 pub mod cbc;
-#[cfg(feature = "gcm_siv")]
-pub mod gcm_siv;
 
 /// Block size in bytes for AES (and XTS-AES)
 pub const BLOCK_SIZE: usize = 16;

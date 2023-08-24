@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "ctap_protocol",
+    "platform",
+    "remote_auth_protool",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1.0.72"
+async-trait = "0.1.72"
+futures = "0.3.28"

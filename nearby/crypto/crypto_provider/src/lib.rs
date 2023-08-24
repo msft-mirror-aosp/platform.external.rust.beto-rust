@@ -39,8 +39,11 @@ pub mod elliptic_curve;
 /// mod containing SHA256 trait.
 pub mod sha2;
 
-/// mod containing aes trait
+/// mod containing aes trait.
 pub mod aes;
+
+/// mod containing aead trait.
+pub mod aead;
 
 /// mod containing traits for ed25519 key generation, signing, and verification
 pub mod ed25519;
@@ -77,11 +80,9 @@ pub trait CryptoProvider: Clone + Debug + PartialEq + Eq + Send {
     /// using SHA-512 (SHA-2) and Curve25519
     type Ed25519: ed25519::Ed25519Provider;
     /// The trait defining AES-128-GCM-SIV, a nonce-misuse resistant AEAD with a key size of 16 bytes.
-    #[cfg(feature = "gcm_siv")]
-    type Aes128GcmSiv: aes::gcm_siv::AesGcmSiv<Key = Aes128Key>;
+    type Aes128GcmSiv: aead::aes_gcm_siv::AesGcmSiv<Key = Aes128Key>;
     /// The trait defining AES-256-GCM-SIV, a nonce-misuse resistant AEAD with a key size of 32 bytes.
-    #[cfg(feature = "gcm_siv")]
-    type Aes256GcmSiv: aes::gcm_siv::AesGcmSiv<Key = Aes256Key>;
+    type Aes256GcmSiv: aead::aes_gcm_siv::AesGcmSiv<Key = Aes256Key>;
 
     /// The cryptographically secure random number generator
     type CryptoRng: CryptoRng;
