@@ -14,7 +14,7 @@
 use crate::aes::{Aes128Key, Aes256Key};
 pub use crate::prelude;
 use core::marker;
-use crypto_provider::aes::ctr::AesCtr;
+use crypto_provider::aes::ctr::{AesCtr, NonceAndCounter};
 use hex_literal::hex;
 use rstest_reuse::template;
 
@@ -24,7 +24,7 @@ pub fn aes_128_ctr_test_encrypt<A: AesCtr<Key = Aes128Key>>(_marker: marker::Pha
     let key: Aes128Key = hex!("2b7e151628aed2a6abf7158809cf4f3c").into();
     let iv = hex!("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
     let mut block: [u8; 16];
-    let mut cipher = A::new(&key, iv);
+    let mut cipher = A::new(&key, NonceAndCounter::from_block(iv));
 
     block = hex!("6bc1bee22e409f96e93d7e117393172a");
     cipher.encrypt(&mut block);
@@ -53,7 +53,7 @@ pub fn aes_128_ctr_test_decrypt<A: AesCtr<Key = Aes128Key>>(_marker: marker::Pha
     let key: Aes128Key = hex!("2b7e151628aed2a6abf7158809cf4f3c").into();
     let iv = hex!("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
     let mut block: [u8; 16];
-    let mut cipher = A::new(&key, iv);
+    let mut cipher = A::new(&key, NonceAndCounter::from_block(iv));
 
     block = hex!("874d6191b620e3261bef6864990db6ce");
     cipher.decrypt(&mut block);
@@ -83,7 +83,7 @@ pub fn aes_256_ctr_test_encrypt<A: AesCtr<Key = Aes256Key>>(_marker: marker::Pha
         hex!("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4").into();
     let iv = hex!("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
     let mut block: [u8; 16];
-    let mut cipher = A::new(&key, iv);
+    let mut cipher = A::new(&key, NonceAndCounter::from_block(iv));
 
     block = hex!("6bc1bee22e409f96e93d7e117393172a");
     cipher.encrypt(&mut block);
@@ -113,7 +113,7 @@ pub fn aes_256_ctr_test_decrypt<A: AesCtr<Key = Aes256Key>>(_marker: marker::Pha
         hex!("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4").into();
     let iv = hex!("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
     let mut block: [u8; 16];
-    let mut cipher = A::new(&key, iv);
+    let mut cipher = A::new(&key, NonceAndCounter::from_block(iv));
 
     block = hex!("601ec313775789a5b7a7f504bbf3d228");
     cipher.decrypt(&mut block);

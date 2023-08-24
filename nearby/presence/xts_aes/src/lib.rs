@@ -173,7 +173,7 @@ impl<A: Aes<Key = K::BlockCipherKey>, K: XtsKey> XtsEncrypter<A, K> {
         Ok(())
     }
 
-    /// Returns an [XtsTweaked] configured with the specified tweak and a block number of 0.
+    /// Returns an [`XtsEncrypterTweaked`] configured with the specified tweak and a block number of 0.
     fn tweaked(&self, tweak: Tweak) -> XtsEncrypterTweaked<A> {
         let mut bytes = tweak.bytes;
         self.tweak_encryption_cipher.encrypt(&mut bytes);
@@ -244,7 +244,7 @@ impl<A: Aes<Key = K::BlockCipherKey>, K: XtsKey> XtsDecrypter<A, K> {
         Ok(())
     }
 
-    /// Returns an [XtsTweaked] configured with the specified tweak and a block number of 0.
+    /// Returns an [`XtsDecrypterTweaked`] configured with the specified tweak and a block number of 0.
     fn tweaked(&self, tweak: Tweak) -> XtsDecrypterTweaked<A> {
         let mut bytes = tweak.bytes;
         self.tweak_encryption_cipher.encrypt(&mut bytes);
@@ -601,7 +601,7 @@ impl<'a, A: Aes> XtsDecrypterTweaked<'a, A> {
         self.tweak_state.clone()
     }
 
-    /// Set the tweak to a state captured via [current_tweak].
+    /// Set the tweak to a state captured via [`current_tweak`](XtsDecrypterTweaked::current_tweak).
     fn set_tweak(&mut self, tweak_state: TweakState) {
         self.tweak_state = tweak_state;
     }

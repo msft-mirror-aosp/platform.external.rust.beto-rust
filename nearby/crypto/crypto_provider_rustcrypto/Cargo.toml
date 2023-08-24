@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 aead = "0.5.1"
-aes-gcm-siv = { version = "0.11.1", features = ["aes"], optional = true }
+aes-gcm-siv = { version = "0.11.1", features = ["aes"] }
 crypto_provider.workspace = true
 hmac.workspace = true
 hkdf.workspace = true
@@ -30,7 +30,6 @@ crypto_provider_test.workspace = true
 crypto_provider_rustcrypto = { path = ".", features = ["std"] }
 
 [features]
-default = ["alloc", "gcm_siv", "rand_chacha"]
+default = ["alloc", "rand_chacha"]
 std = ["ed25519-dalek/default", "rand/std", "rand/std_rng", "crypto_provider/std", "crypto_provider/alloc"]
 alloc = ["aead/bytes"]
-gcm_siv = ["crypto_provider/gcm_siv", "dep:aes-gcm-siv"]

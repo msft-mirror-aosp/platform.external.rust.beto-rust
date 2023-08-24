@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-crypto_provider.workspace = true
+crypto_provider = {  workspace = true, features = ["test_vectors"] }
 rand_ext.workspace = true
 test_helper.workspace = true
 

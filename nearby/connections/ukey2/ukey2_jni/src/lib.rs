@@ -378,7 +378,9 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     _: JClass,
     session_info: jbyteArray,
 ) -> jlong {
-    let session_info_rust = env.convert_byte_array(session_info).expect("bad session_info data");
+    let session_info_rust = env
+        .convert_byte_array(session_info)
+        .expect("bad session_info data");
     let ctx =
         D2DConnectionContextV1::from_saved_session::<CryptoProvider>(session_info_rust.as_slice());
     if ctx.is_err() {
