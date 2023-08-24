@@ -14,7 +14,6 @@
 
 pub mod cbc;
 pub mod ctr;
-pub mod gcm_siv;
 
 pub use crate::prelude::*;
 

@@ -80,8 +80,8 @@ impl crypto_provider::CryptoProvider for Openssl {
     type AesCtr128 = aes::OpenSslAesCtr128;
     type AesCtr256 = aes::OpenSslAesCtr256;
     type Ed25519 = ed25519::Ed25519;
-    type Aes128GcmSiv = aes::OpenSslAesGcmSiv128;
-    type Aes256GcmSiv = aes::OpenSslAesGcmSiv256;
+    type Aes128GcmSiv = crypto_provider_stubs::Aes128Stubs;
+    type Aes256GcmSiv = crypto_provider_stubs::Aes256Stubs;
     type CryptoRng = OpenSslRng;
 
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {

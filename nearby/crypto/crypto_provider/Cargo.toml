@@ -13,10 +13,10 @@ rand_ext.workspace = true
 rand.workspace = true
 
 [features]
-default = ["alloc", "gcm_siv"]
+default = ["alloc"]
 std = []
 alloc = []
-gcm_siv = []
+test_vectors = []
 
 [[bench]]
 name = "hmac_bench"
