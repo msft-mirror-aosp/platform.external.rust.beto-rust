@@ -23,6 +23,23 @@ rust_library_rlib {
 }
 
 rust_library_rlib {
+    name: "libcrypto_provider_stubs",
+    host_supported: true,
+    crate_name: "crypto_provider_stubs",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["crypto/crypto_provider_stubs/src/lib.rs"],
+    edition: "2021",
+    rustlibs: [
+        "libcrypto_provider",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library_rlib {
     name: "liblock_adapter",
     host_supported: true,
     crate_name: "lock_adapter",
@@ -52,6 +69,7 @@ rust_library_rlib {
     rustlibs: [
         "libcfg_if",
         "libcrypto_provider",
+        "libcrypto_provider_stubs",
         "libopenssl",
         "librand",
     ],
