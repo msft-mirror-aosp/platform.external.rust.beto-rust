@@ -37,6 +37,9 @@ pub mod hkdf;
 /// Implementations of crypto_provider::hmac traits backed by BoringSSL
 pub mod hmac;
 
+/// Implementations of crypto_provider::ed25519 traits backed by BoringSSL
+mod ed25519;
+
 /// The BoringSSL backed struct which implements CryptoProvider
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct Boringssl;
@@ -55,7 +58,7 @@ impl CryptoProvider for Boringssl {
     type Aes256 = aes::Aes256;
     type AesCtr128 = Aes128Stubs;
     type AesCtr256 = Aes256Stubs;
-    type Ed25519 = Ed25519Stubs;
+    type Ed25519 = ed25519::Ed25519;
     type Aes128GcmSiv = Aes128Stubs;
     type Aes256GcmSiv = Aes256Stubs;
     type CryptoRng = BoringSslRng;

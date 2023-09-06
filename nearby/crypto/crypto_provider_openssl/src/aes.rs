@@ -26,9 +26,9 @@
 
 use openssl::symm::{Cipher, Crypter, Mode};
 
-use crypto_provider::aes::cbc::{AesCbcIv, DecryptionError};
-use crypto_provider::aes::gcm_siv::{AesGcmSiv, GcmSivError};
 use crypto_provider::aes::{
+    cbc::{AesCbcIv, DecryptionError},
+    ctr::NonceAndCounter,
     Aes, Aes128Key, Aes256Key, AesBlock, AesCipher, AesDecryptCipher, AesEncryptCipher, AesKey,
 };
 
@@ -152,20 +152,20 @@ pub struct OpenSslAesCtr128 {
 
 impl crypto_provider::aes::ctr::AesCtr for OpenSslAesCtr128 {
     type Key = crypto_provider::aes::Aes128Key;
-    fn new(key: &Self::Key, iv: [u8; 16]) -> Self {
+    fn new(key: &Self::Key, nonce_and_counter: NonceAndCounter) -> Self {
         Self {
             enc_cipher: Crypter::new(
                 Cipher::aes_128_ctr(),
                 Mode::Encrypt,
                 key.as_slice(),
-                Some(&iv),
+                Some(&nonce_and_counter.as_block_array()),
             )
             .unwrap(),
             dec_cipher: Crypter::new(
                 Cipher::aes_128_ctr(),
                 Mode::Decrypt,
                 key.as_slice(),
-                Some(&iv),
+                Some(&nonce_and_counter.as_block_array()),
             )
             .unwrap(),
         }
@@ -192,20 +192,20 @@ pub struct OpenSslAesCtr256 {
 
 impl crypto_provider::aes::ctr::AesCtr for OpenSslAesCtr256 {
     type Key = crypto_provider::aes::Aes256Key;
-    fn new(key: &Self::Key, iv: [u8; 16]) -> Self {
+    fn new(key: &Self::Key, nonce_and_counter: NonceAndCounter) -> Self {
         Self {
             enc_cipher: Crypter::new(
                 Cipher::aes_256_ctr(),
                 Mode::Encrypt,
                 key.as_slice(),
-                Some(&iv),
+                Some(&nonce_and_counter.as_block_array()),
             )
             .unwrap(),
             dec_cipher: Crypter::new(
                 Cipher::aes_256_ctr(),
                 Mode::Decrypt,
                 key.as_slice(),
-                Some(&iv),
+                Some(&nonce_and_counter.as_block_array()),
             )
             .unwrap(),
         }
@@ -221,43 +221,6 @@ impl crypto_provider::aes::ctr::AesCtr for OpenSslAesCtr256 {
         let mut in_slice = vec![0u8; data.len()];
         in_slice.copy_from_slice(data);
         let _ = self.dec_cipher.update(&in_slice, data);
-    }
-}
-
-/// Unimplemented AES-GCM-SIV implementation.
-pub struct OpenSslAesGcmSiv128;
-
-impl AesGcmSiv for OpenSslAesGcmSiv128 {
-    type Key = Aes128Key;
-
-    fn new(_key: &Self::Key) -> Self {
-        todo!()
-    }
-
-    fn encrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
-        todo!()
-    }
-
-    fn decrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
-        todo!()
-    }
-}
-
-pub struct OpenSslAesGcmSiv256;
-
-impl AesGcmSiv for OpenSslAesGcmSiv256 {
-    type Key = Aes256Key;
-
-    fn new(_key: &Self::Key) -> Self {
-        todo!()
-    }
-
-    fn encrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
-        todo!()
-    }
-
-    fn decrypt(&self, _data: &mut Vec<u8>, _aad: &[u8], _nonce: &[u8]) -> Result<(), GcmSivError> {
-        todo!()
     }
 }
 

@@ -28,11 +28,20 @@ pub trait Ed25519Provider {
 /// The length of a ed25519 `Signature`, in bytes.
 pub const SIGNATURE_LENGTH: usize = 64;
 
-/// The length of an ed25519 `KeyPair`, in bytes.
-pub const KEY_PAIR_LENGTH: usize = 64;
+/// The length of an ed25519 `PrivateKey`, in bytes.
+pub const PRIVATE_KEY_LENGTH: usize = 32;
 
-/// The length of an ed25519 `PublicKey`, in bytes.
-pub const KEY_LENGTH: usize = 32;
+/// The length of an ed25519 `PrivateKey`, in bytes.
+pub const PUBLIC_KEY_LENGTH: usize = 32;
+
+/// A byte buffer the size of a ed25519 `Signature`.
+pub type RawSignature = [u8; SIGNATURE_LENGTH];
+
+/// A byte buffer the size of a ed25519 `PublicKey`.
+pub type RawPublicKey = [u8; PUBLIC_KEY_LENGTH];
+
+/// A byte buffer the size of a ed25519 `PrivateKey`.
+pub type RawPrivateKey = [u8; PRIVATE_KEY_LENGTH];
 
 /// The keypair which includes both public and secret halves of an asymmetric key.
 pub trait KeyPair: Sized {
@@ -42,17 +51,13 @@ pub trait KeyPair: Sized {
     /// The ed25519 signature returned when signing a message
     type Signature: Signature;
 
-    /// Converts the key-pair to an array of bytes consisting
-    /// of the bytes of the private key followed by the bytes
-    /// of the public key. This method should only ever be called
-    /// by code which securely stores private credentials.
-    fn to_bytes(&self) -> [u8; KEY_PAIR_LENGTH];
+    /// Returns the private key bytes of the `KeyPair`.
+    /// This method should only ever be called by code which securely stores private credentials.
+    fn private_key(&self) -> RawPrivateKey;
 
-    /// Builds this key-pair from an array of bytes in the
-    /// format yielded by `to_bytes`. This method should
-    /// only ever be called by code which securely stores private
-    /// credentials.
-    fn from_bytes(bytes: [u8; KEY_PAIR_LENGTH]) -> Result<Self, InvalidBytes>
+    /// Builds a key-pair from a `RawPrivateKey` array of bytes.
+    /// This should only ever be called by code which securely stores private credentials.
+    fn from_private_key(bytes: &RawPrivateKey) -> Self
     where
         Self: Sized;
 
@@ -73,10 +78,10 @@ pub trait Signature: Sized {
     /// Create a new signature from a byte slice, and return an error on an invalid signature
     /// An `Ok` result does not guarantee that the Signature is valid, however it will catch a
     /// number of invalid signatures relatively inexpensively.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, InvalidSignature>;
+    fn from_bytes(bytes: &RawSignature) -> Self;
 
     /// Returns a slice of the signature bytes
-    fn to_bytes(&self) -> [u8; SIGNATURE_LENGTH];
+    fn to_bytes(&self) -> RawSignature;
 }
 
 /// An ed25519 public key
@@ -86,12 +91,12 @@ pub trait PublicKey {
 
     /// Builds this public key from an array of bytes in
     /// the format yielded by `to_bytes`.
-    fn from_bytes(bytes: [u8; KEY_LENGTH]) -> Result<Self, InvalidBytes>
+    fn from_bytes(bytes: &RawPublicKey) -> Result<Self, InvalidBytes>
     where
         Self: Sized;
 
     /// Yields the bytes of the public key
-    fn to_bytes(&self) -> [u8; KEY_LENGTH];
+    fn to_bytes(&self) -> RawPublicKey;
 
     /// Succeeds if the signature was a valid signature created by this Keypair on the prehashed_message.
     fn verify_strict(
@@ -108,7 +113,3 @@ pub struct InvalidBytes;
 /// Error returned if the verification on the signature + message fails
 #[derive(Debug)]
 pub struct SignatureError;
-
-/// Error returned if invalid signature bytes are provided
-#[derive(Debug)]
-pub struct InvalidSignature;

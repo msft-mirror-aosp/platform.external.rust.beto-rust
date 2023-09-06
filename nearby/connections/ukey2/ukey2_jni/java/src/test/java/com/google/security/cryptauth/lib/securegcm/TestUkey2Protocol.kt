@@ -36,10 +36,10 @@ class TestUkey2Protocol {
     @Test
     fun testHandshake() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         assertFalse(initiatorContext.isHandshakeComplete)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         assertFalse(serverContext.isHandshakeComplete)
         assertDoesNotThrow {
             serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
@@ -53,9 +53,9 @@ class TestUkey2Protocol {
     @Test
     fun testSendReceiveMessage() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         assertDoesNotThrow {
             serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
@@ -77,9 +77,9 @@ class TestUkey2Protocol {
     @Test
     fun testSaveRestoreSession() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         assertDoesNotThrow {
             serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
@@ -103,9 +103,9 @@ class TestUkey2Protocol {
     @Test
     fun testSaveRestoreBadSession() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         val deriveInitiatorSavedSession = {
             assertDoesNotThrow {
                 serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
@@ -124,9 +124,9 @@ class TestUkey2Protocol {
     @Test
     fun tryReuseHandshakeContext() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         assertDoesNotThrow {
             serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
@@ -142,9 +142,9 @@ class TestUkey2Protocol {
     @Test
     fun testSendReceiveMessageWithAssociatedData() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         val associatedData = "Associated data.".toByteArray()
         assertDoesNotThrow {
             serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
@@ -167,9 +167,9 @@ class TestUkey2Protocol {
     @Test
     fun testVerificationString() {
         val initiatorContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Initiator, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.INITIATOR)
         val serverContext =
-            D2DHandshakeContext(D2DHandshakeContext.Role.Responder, NoOpLogger)
+            D2DHandshakeContext(D2DHandshakeContext.Role.RESPONDER)
         assertDoesNotThrow {
             serverContext.parseHandshakeMessage(initiatorContext.nextHandshakeMessage)
             initiatorContext.parseHandshakeMessage(serverContext.nextHandshakeMessage)
