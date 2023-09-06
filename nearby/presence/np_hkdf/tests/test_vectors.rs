@@ -48,12 +48,12 @@ fn hkdf_test_vectors() -> Result<(), anyhow::Error> {
                 hkdf.legacy_metadata_key_hmac_key().as_bytes()
             );
             assert_eq!(
-                extract_key_array::<12>(group, "legacy_metadata_iv"),
-                hkdf.legacy_metadata_iv()
+                extract_key_array::<12>(group, "legacy_metadata_nonce"),
+                hkdf.legacy_metadata_nonce()
             );
             assert_eq!(
-                extract_key_array::<12>(group, "extended_metadata_iv"),
-                hkdf.extended_metadata_iv()
+                extract_key_array::<12>(group, "extended_metadata_nonce"),
+                hkdf.extended_metadata_nonce()
             );
             assert_eq!(
                 &extract_key_array::<32>(group, "extended_unsigned_metadata_key_hmac_key"),
@@ -125,7 +125,7 @@ fn gen_test_vectors() {
 
     let mut array = Vec::<serde_json::Value>::new();
 
-    for _ in 0..1_000 {
+    for _ in 0..100 {
         let key_seed: [u8; 32] = rng.gen();
         let legacy_adv_salt: [u8; 2] = rng.gen();
         let legacy_metadata_key: [u8; 14] = rng.gen();
@@ -140,8 +140,8 @@ fn gen_test_vectors() {
                     "legacy_ldt_key": hex::encode_upper(key_seed_hkdf.legacy_ldt_key().as_concatenated()),
                     "legacy_metadata_key_hmac_key":
                         hex::encode_upper(key_seed_hkdf.legacy_metadata_key_hmac_key().as_bytes()),
-                    "legacy_metadata_iv": hex::encode_upper(key_seed_hkdf.legacy_metadata_iv()),
-                    "extended_metadata_iv": hex::encode_upper(key_seed_hkdf.extended_metadata_iv()),
+                    "legacy_metadata_nonce": hex::encode_upper(key_seed_hkdf.legacy_metadata_nonce()),
+                    "extended_metadata_nonce": hex::encode_upper(key_seed_hkdf.extended_metadata_nonce()),
                     "extended_unsigned_metadata_key_hmac_key": hex::encode_upper(key_seed_hkdf.extended_unsigned_metadata_key_hmac_key().as_bytes()),
                     "extended_unsigned_section_aes_key": hex::encode_upper(UnsignedSectionKeys::<CryptoProviderImpl>::aes_key(&key_seed_hkdf).as_array()),
                     "extended_unsigned_section_mic_hmac_key": hex::encode_upper(UnsignedSectionKeys::<CryptoProviderImpl>::hmac_key(&key_seed_hkdf).as_bytes()),

@@ -228,7 +228,6 @@ pub fn wycheproof_p256_test<E: EcdhProviderForP256Test>(_: PhantomData<E>) {
                 // from the given RNG when generating a new key).
                 continue;
             };
-            std::println!("Testing {}", test.tc_id);
             let result = p256_ecdh_test_impl::<E>(
                 &test.public_key,
                 &test.private_key.try_into().expect("Private key should be 32 bytes long"),
