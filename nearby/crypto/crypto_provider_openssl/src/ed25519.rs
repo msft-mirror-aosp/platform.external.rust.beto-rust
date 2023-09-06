@@ -13,8 +13,7 @@
 // limitations under the License.
 
 use crypto_provider::ed25519::{
-    InvalidBytes, InvalidSignature, Signature as _, SignatureError, KEY_LENGTH, KEY_PAIR_LENGTH,
-    SIGNATURE_LENGTH,
+    InvalidBytes, RawPrivateKey, RawPublicKey, RawSignature, Signature as _, SignatureError,
 };
 use openssl::pkey::{Id, PKey, Private};
 use openssl::sign::{Signer, Verifier};
@@ -33,7 +32,7 @@ impl crypto_provider::ed25519::KeyPair for KeyPair {
     type PublicKey = PublicKey;
     type Signature = Signature;
 
-    fn to_bytes(&self) -> [u8; KEY_PAIR_LENGTH] {
+    fn private_key(&self) -> RawPrivateKey {
         let private_key = self.0.raw_private_key().unwrap();
         let mut public_key = self.0.raw_public_key().unwrap();
         let mut result = private_key;
@@ -41,22 +40,20 @@ impl crypto_provider::ed25519::KeyPair for KeyPair {
         result.try_into().unwrap()
     }
 
-    fn from_bytes(bytes: [u8; KEY_PAIR_LENGTH]) -> Result<Self, InvalidBytes> {
-        PKey::private_key_from_raw_bytes(&bytes[..KEY_LENGTH], Id::ED25519)
-            .map(Self)
-            .map_err(|_| InvalidBytes)
+    fn from_private_key(bytes: &RawPrivateKey) -> Self {
+        Self(PKey::private_key_from_raw_bytes(bytes, Id::ED25519).unwrap())
     }
 
     fn sign(&self, msg: &[u8]) -> Self::Signature {
         let mut signer =
             Signer::new_without_digest(&self.0).expect("should be able to create a signer");
-        let sig_bytes: [u8; SIGNATURE_LENGTH] = signer
+        let sig_bytes: RawSignature = signer
             .sign_oneshot_to_vec(msg)
             .expect("singing should succeed")
             .try_into()
             .expect("signature should be a valid size");
 
-        Self::Signature::from_bytes(&sig_bytes).expect("this should never fail")
+        Self::Signature::from_bytes(&sig_bytes)
     }
 
     fn generate() -> Self {
@@ -71,14 +68,14 @@ impl crypto_provider::ed25519::KeyPair for KeyPair {
     }
 }
 
-pub struct Signature([u8; SIGNATURE_LENGTH]);
+pub struct Signature(RawSignature);
 
 impl crypto_provider::ed25519::Signature for Signature {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, InvalidSignature> {
-        bytes.try_into().map(Self).map_err(|_| InvalidSignature)
+    fn from_bytes(bytes: &RawSignature) -> Self {
+        Self(*bytes)
     }
 
-    fn to_bytes(&self) -> [u8; SIGNATURE_LENGTH] {
+    fn to_bytes(&self) -> RawSignature {
         self.0
     }
 }
@@ -88,14 +85,14 @@ pub struct PublicKey(Vec<u8>);
 impl crypto_provider::ed25519::PublicKey for PublicKey {
     type Signature = Signature;
 
-    fn from_bytes(bytes: [u8; KEY_LENGTH]) -> Result<Self, InvalidBytes>
+    fn from_bytes(bytes: &RawPublicKey) -> Result<Self, InvalidBytes>
     where
         Self: Sized,
     {
         Ok(PublicKey(bytes.to_vec()))
     }
 
-    fn to_bytes(&self) -> [u8; KEY_LENGTH] {
+    fn to_bytes(&self) -> RawPublicKey {
         //Should be length 32
         self.0.as_slice().try_into().unwrap()
     }

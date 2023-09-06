@@ -32,6 +32,8 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_core::CryptoRng;
 use subtle::ConstantTimeEq;
 
+/// Contains the RustCrypto backed impls for AES-GCM-SIV operations
+mod aead;
 /// Contains the RustCrypto backed AES impl for CryptoProvider
 pub mod aes;
 /// Contains the RustCrypto backed impl for ed25519 key generation, signing, and verification
@@ -86,13 +88,11 @@ impl<R: CryptoRng + SeedableRng + RngCore + Eq + PartialEq + Debug + Clone + Sen
     type Sha512 = sha2_rc::RustCryptoSha512;
     type Aes128 = aes::Aes128;
     type Aes256 = aes::Aes256;
-    type AesCtr128 = aes::AesCtr128;
-    type AesCtr256 = aes::AesCtr256;
+    type AesCtr128 = aes::ctr::AesCtr128;
+    type AesCtr256 = aes::ctr::AesCtr256;
     type Ed25519 = ed25519::Ed25519;
-    #[cfg(feature = "gcm_siv")]
-    type Aes128GcmSiv = aes::gcm_siv::AesGcmSiv128;
-    #[cfg(feature = "gcm_siv")]
-    type Aes256GcmSiv = aes::gcm_siv::AesGcmSiv256;
+    type Aes128GcmSiv = aead::aes_gcm_siv::AesGcmSiv128;
+    type Aes256GcmSiv = aead::aes_gcm_siv::AesGcmSiv256;
     type CryptoRng = RcRng<R>;
 
     fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {

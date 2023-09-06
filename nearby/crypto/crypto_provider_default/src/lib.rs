@@ -15,12 +15,16 @@
 //! Provides multiple implementations of CryptoProvider through the same struct, configurable by
 //! feature flag.
 
+#![no_std]
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "rustcrypto")] {
         pub use crypto_provider_rustcrypto::RustCrypto as CryptoProviderImpl;
     } else if #[cfg(feature = "boringssl")] {
         pub use crypto_provider_boringssl::Boringssl as CryptoProviderImpl;
-    } else if #[cfg(feature = "openssl")] {
+    } else if #[cfg(any(feature = "openssl", feature = "opensslbssl"))] {
         pub use crypto_provider_openssl::Openssl as CryptoProviderImpl;
     } else {
         compile_error!("No crypto_provider feature enabled!");

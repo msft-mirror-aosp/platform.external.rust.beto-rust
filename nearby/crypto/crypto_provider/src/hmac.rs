@@ -38,7 +38,7 @@ pub trait Hmac<const N: usize>: Sized {
 
 /// Error type for when the output of the hmac operation
 /// is not equal to the expected value.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MacError;
 
 /// Error output when the provided key material length is invalid

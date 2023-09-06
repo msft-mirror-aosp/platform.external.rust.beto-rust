@@ -1,6 +1,7 @@
 # The packages to override
 paths = [
-    "../boringssl-build/boringssl/build/rust/bssl-sys",
+    "../boringssl-build/boringssl/rust/bssl-crypto",
+    "../boringssl-build/boringssl/rust/bssl-sys",
     "../boringssl-build/rust-openssl/openssl",
     "../boringssl-build/rust-openssl/openssl-sys",
 ]

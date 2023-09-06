@@ -16,7 +16,6 @@ lazy_static.workspace = true
 log.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
-raw-parts = "1.1.2"
 
 [features]
 default = ["rustcrypto"]
