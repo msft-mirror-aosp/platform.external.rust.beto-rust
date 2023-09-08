@@ -23,6 +23,7 @@ use rstest_reuse::template;
 
 pub use rstest_reuse;
 
+pub mod aead;
 pub mod aes;
 pub mod ed25519;
 pub mod elliptic_curve;

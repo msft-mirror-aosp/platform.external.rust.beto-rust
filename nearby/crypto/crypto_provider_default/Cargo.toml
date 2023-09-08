@@ -12,8 +12,8 @@ crypto_provider_openssl = {workspace = true, optional = true}
 cfg-if.workspace = true
 
 [features]
-std = ["crypto_provider_rustcrypto/std"]
 default = ["rustcrypto"]
+std = ["crypto_provider_rustcrypto/std"]
 rustcrypto = ["crypto_provider_rustcrypto"]
 boringssl = ["crypto_provider_boringssl"]
 opensslbssl = ["crypto_provider_openssl/boringssl"]

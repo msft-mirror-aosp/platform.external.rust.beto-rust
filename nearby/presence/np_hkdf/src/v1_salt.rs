@@ -60,6 +60,11 @@ impl<C: CryptoProvider> V1Salt<C> {
         self.data.as_slice()
     }
 
+    /// Returns the salt bytes as an array
+    pub fn into_array(self) -> [u8; 16] {
+        self.data
+    }
+
     /// Returns the salt bytes as a reference to an array
     pub fn as_array_ref(&self) -> &[u8; 16] {
         &self.data

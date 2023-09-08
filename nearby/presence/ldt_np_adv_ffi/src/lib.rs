@@ -20,6 +20,8 @@
     clippy::panic,
     clippy::expect_used
 )]
+// TODO: Remove usage of `lang_items` when ffi is no longer alloc
+#![allow(internal_features)]
 // These features are needed to support no_std + alloc
 #![feature(lang_items)]
 

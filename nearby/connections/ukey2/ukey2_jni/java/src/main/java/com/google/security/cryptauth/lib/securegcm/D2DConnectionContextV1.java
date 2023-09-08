@@ -37,7 +37,7 @@ public class D2DConnectionContextV1 {
 
     private static native byte[] save_session(long contextPtr) throws BadHandleException;
 
-    private static native long from_saved_session(byte[] saved_session_info);
+    private static native long from_saved_session(byte[] savedSessionInfo);
 
     private final long contextPtr;
 
@@ -56,7 +56,8 @@ public class D2DConnectionContextV1 {
      * @param payload The message to be encrypted.
      * @return The encrypted/encoded message.
      */
-    public @Nonnull byte[] encodeMessageToPeer(@Nonnull byte[] payload, @Nullable byte[] associatedData) throws BadHandleException {
+     @Nonnull
+    public byte[] encodeMessageToPeer(@Nonnull byte[] payload, @Nullable byte[] associatedData) throws BadHandleException {
         return encode_message_to_peer(contextPtr, payload, associatedData);
     }
 
@@ -66,7 +67,8 @@ public class D2DConnectionContextV1 {
      * @param message The message received over the connection.
      * @return The decoded message from the connection peer.
      */
-    public @Nonnull byte[] decodeMessageFromPeer(@Nonnull byte[] message, @Nullable byte[] associatedData) throws CryptoException {
+     @Nonnull
+    public byte[] decodeMessageFromPeer(@Nonnull byte[] message, @Nullable byte[] associatedData) throws CryptoException {
         return decode_message_from_peer(contextPtr, message, associatedData);
     }
 
@@ -75,7 +77,8 @@ public class D2DConnectionContextV1 {
      *
      * @return The session unique identifier
      */
-    public @Nonnull byte[] getSessionUnique() throws BadHandleException {
+     @Nonnull
+    public  byte[] getSessionUnique() throws BadHandleException {
         return get_session_unique(contextPtr);
     }
 
@@ -102,7 +105,8 @@ public class D2DConnectionContextV1 {
      *
      * @return a byte array representing the current session.
      */
-    public @Nonnull byte[] saveSession() throws BadHandleException {
+     @Nonnull
+    public byte[] saveSession() throws BadHandleException {
         return save_session(contextPtr);
     }
 
@@ -111,9 +115,8 @@ public class D2DConnectionContextV1 {
      *
      * @param savedSessionInfo the byte array from saveSession()
      * @return a D2DConnectionContextV1 session with the same properties as the context saved.
-     * @throws SessionRestoreException if the session was unable to be restored.
      */
-    public static D2DConnectionContextV1 fromSavedSession(@Nonnull byte[] savedSessionInfo) throws SessionRestoreException {
+    public static D2DConnectionContextV1 fromSavedSession(@Nonnull byte[] savedSessionInfo) {
         return new D2DConnectionContextV1(from_saved_session(savedSessionInfo));
     }
 

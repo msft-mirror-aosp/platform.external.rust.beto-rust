@@ -24,26 +24,26 @@ public class D2DHandshakeContext {
     }
 
     public enum Role {
-        Initiator,
-        Responder,
+        INITIATOR,
+        RESPONDER,
     }
 
-    private final long context_ptr;
+    private final long contextPtr;
 
-    private static native boolean is_handshake_complete(long context_ptr) throws BadHandleException;
+    private static native boolean is_handshake_complete(long contextPtr) throws BadHandleException;
 
-    private static native long create_context(boolean is_client);
+    private static native long create_context(boolean isClient);
 
-    private static native byte[] get_next_handshake_message(long context_ptr) throws BadHandleException;
+    private static native byte[] get_next_handshake_message(long contextPtr) throws BadHandleException;
 
-    private static native void parse_handshake_message(long context_ptr, byte[] message) throws BadHandleException, HandshakeException;
+    private static native void parse_handshake_message(long contextPtr, byte[] message) throws BadHandleException, HandshakeException;
 
-    private static native byte[] get_verification_string(long context_ptr, int length) throws BadHandleException, HandshakeException;
+    private static native byte[] get_verification_string(long contextPtr, int length) throws BadHandleException, HandshakeException;
 
-    private static native long to_connection_context(long context_ptr) throws HandshakeException;
+    private static native long to_connection_context(long contextPtr) throws HandshakeException;
 
     public D2DHandshakeContext(@Nonnull Role role) {
-        this.context_ptr = create_context(role == Role.Initiator);
+        this.contextPtr = create_context(role == Role.INITIATOR);
     }
 
     /**
@@ -52,7 +52,7 @@ public class D2DHandshakeContext {
      * @return a D2DHandshakeContext for the role of initiator in the handshake.
      */
     public static D2DHandshakeContext forInitiator() {
-        return new D2DHandshakeContext(Role.Initiator);
+        return new D2DHandshakeContext(Role.INITIATOR);
     }
 
     /**
@@ -61,7 +61,7 @@ public class D2DHandshakeContext {
      * @return a D2DHandshakeContext for the role of responder/server in the handshake.
      */
     public static D2DHandshakeContext forResponder() {
-        return new D2DHandshakeContext(Role.Responder);
+        return new D2DHandshakeContext(Role.RESPONDER);
     }
 
     /**
@@ -70,7 +70,7 @@ public class D2DHandshakeContext {
      * @return true/false depending on if the handshake is complete.
      */
     public boolean isHandshakeComplete() throws BadHandleException {
-        return is_handshake_complete(context_ptr);
+        return is_handshake_complete(contextPtr);
     }
 
     /**
@@ -78,8 +78,9 @@ public class D2DHandshakeContext {
      *
      * @return handshake message encoded in a SecureMessage.
      */
-    public @Nonnull byte[] getNextHandshakeMessage() throws BadHandleException {
-        return get_next_handshake_message(context_ptr);
+    @Nonnull
+    public byte[] getNextHandshakeMessage() throws BadHandleException {
+        return get_next_handshake_message(contextPtr);
     }
 
     /**
@@ -87,8 +88,9 @@ public class D2DHandshakeContext {
      *
      * @param message - handshake message from the other side.
      */
-    public @Nonnull void parseHandshakeMessage(@Nonnull byte[] message) throws BadHandleException, HandshakeException {
-        parse_handshake_message(context_ptr, message);
+    @Nonnull
+    public void parseHandshakeMessage(@Nonnull byte[] message) throws BadHandleException, HandshakeException {
+        parse_handshake_message(contextPtr, message);
     }
 
     /**
@@ -102,8 +104,9 @@ public class D2DHandshakeContext {
      * @throws BadHandleException - Thrown if the handle is no longer valid, for example after calling {@link D2DHandshakeContext#toConnectionContext}
      * @throws HandshakeException - Thrown if the handshake is not complete when this function is called.
      */
-    public @Nonnull byte[] getVerificationString(int length) throws BadHandleException, HandshakeException {
-        return get_verification_string(context_ptr, length);
+    @Nonnull
+    public byte[] getVerificationString(int length) throws BadHandleException, HandshakeException {
+        return get_verification_string(contextPtr, length);
     }
 
     /**
@@ -114,6 +117,6 @@ public class D2DHandshakeContext {
      * @throws HandshakeException if the handsshake is not complete when this function is called.
      */
     public D2DConnectionContextV1 toConnectionContext() throws HandshakeException {
-        return new D2DConnectionContextV1(to_connection_context(context_ptr));
+        return new D2DConnectionContextV1(to_connection_context(contextPtr));
     }
 }

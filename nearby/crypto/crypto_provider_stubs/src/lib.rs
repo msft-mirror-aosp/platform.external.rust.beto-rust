@@ -20,22 +20,23 @@
 
 use std::fmt::Debug;
 
-use crypto_provider::aes::cbc::{AesCbcIv, AesCbcPkcs7Padded, DecryptionError};
-use crypto_provider::aes::ctr::AesCtr;
-use crypto_provider::aes::gcm_siv::{AesGcmSiv, GcmSivError};
-use crypto_provider::aes::{
-    Aes, Aes128Key, Aes256Key, AesBlock, AesCipher, AesDecryptCipher, AesEncryptCipher,
+use crypto_provider::ed25519::{RawPrivateKey, RawPublicKey, RawSignature};
+use crypto_provider::{
+    aead::aes_gcm_siv::AesGcmSiv,
+    aead::{Aead, AeadError},
+    aes::{
+        cbc::{AesCbcIv, AesCbcPkcs7Padded, DecryptionError},
+        ctr::{AesCtr, NonceAndCounter},
+        Aes, Aes128Key, Aes256Key, AesBlock, AesCipher, AesDecryptCipher, AesEncryptCipher,
+    },
+    ed25519,
+    ed25519::{Ed25519Provider, InvalidBytes, KeyPair, Signature, SignatureError},
+    elliptic_curve::{EcdhProvider, EphemeralSecret, PublicKey},
+    hkdf::{Hkdf, InvalidLength},
+    hmac::{Hmac, MacError},
+    p256::{P256PublicKey, P256},
+    x25519::X25519,
 };
-use crypto_provider::ed25519;
-use crypto_provider::ed25519::{
-    Ed25519Provider, InvalidBytes, InvalidSignature, KeyPair, Signature, SignatureError,
-    KEY_LENGTH, KEY_PAIR_LENGTH, SIGNATURE_LENGTH,
-};
-use crypto_provider::elliptic_curve::{EcdhProvider, EphemeralSecret, PublicKey};
-use crypto_provider::hkdf::{Hkdf, InvalidLength};
-use crypto_provider::hmac::{Hmac, MacError};
-use crypto_provider::p256::{P256PublicKey, P256};
-use crypto_provider::x25519::X25519;
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct CryptoProviderStubs;
@@ -316,7 +317,7 @@ impl AesEncryptCipher for Aes128Stubs {
 impl AesCtr for Aes128Stubs {
     type Key = Aes128Key;
 
-    fn new(_key: &Self::Key, _iv: [u8; 16]) -> Self {
+    fn new(_key: &Self::Key, _nonce_and_counter: NonceAndCounter) -> Self {
         unimplemented!()
     }
 
@@ -329,21 +330,25 @@ impl AesCtr for Aes128Stubs {
     }
 }
 
-impl AesGcmSiv for Aes128Stubs {
+impl Aead for Aes128Stubs {
+    const TAG_SIZE: usize = 16;
+    type Nonce = [u8; 12];
     type Key = Aes128Key;
 
     fn new(key: &Self::Key) -> Self {
         unimplemented!()
     }
 
-    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+    fn encrypt(&self, msg: &mut Vec<u8>, aad: &[u8], nonce: &[u8; 12]) -> Result<(), AeadError> {
         unimplemented!()
     }
 
-    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+    fn decrypt(&self, msg: &mut Vec<u8>, aad: &[u8], nonce: &[u8; 12]) -> Result<(), AeadError> {
         unimplemented!()
     }
 }
+
+impl AesGcmSiv for Aes128Stubs {}
 
 pub struct Aes256Stubs;
 
@@ -370,7 +375,7 @@ impl AesDecryptCipher for Aes256Stubs {
 impl AesCtr for Aes256Stubs {
     type Key = Aes256Key;
 
-    fn new(_key: &Self::Key, _iv: [u8; 16]) -> Self {
+    fn new(_key: &Self::Key, _nonce_and_counter: NonceAndCounter) -> Self {
         unimplemented!()
     }
 
@@ -383,21 +388,25 @@ impl AesCtr for Aes256Stubs {
     }
 }
 
-impl AesGcmSiv for Aes256Stubs {
+impl Aead for Aes256Stubs {
+    const TAG_SIZE: usize = 16;
+    type Nonce = [u8; 12];
     type Key = Aes256Key;
 
     fn new(key: &Self::Key) -> Self {
         unimplemented!()
     }
 
-    fn encrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+    fn encrypt(&self, msg: &mut Vec<u8>, aad: &[u8], nonce: &[u8; 12]) -> Result<(), AeadError> {
         unimplemented!()
     }
 
-    fn decrypt(&self, data: &mut Vec<u8>, aad: &[u8], nonce: &[u8]) -> Result<(), GcmSivError> {
+    fn decrypt(&self, msg: &mut Vec<u8>, aad: &[u8], nonce: &[u8; 12]) -> Result<(), AeadError> {
         unimplemented!()
     }
 }
+
+impl AesGcmSiv for Aes256Stubs {}
 
 pub struct Ed25519Stubs;
 
@@ -410,14 +419,14 @@ impl Ed25519Provider for Ed25519Stubs {
 impl ed25519::PublicKey for PublicKeyStubs {
     type Signature = SignatureStubs;
 
-    fn from_bytes(bytes: [u8; KEY_LENGTH]) -> Result<Self, InvalidBytes>
+    fn from_bytes(bytes: &RawPublicKey) -> Result<Self, InvalidBytes>
     where
         Self: Sized,
     {
         unimplemented!()
     }
 
-    fn to_bytes(&self) -> [u8; KEY_LENGTH] {
+    fn to_bytes(&self) -> RawPublicKey {
         unimplemented!()
     }
 
@@ -433,11 +442,11 @@ impl ed25519::PublicKey for PublicKeyStubs {
 pub struct SignatureStubs;
 
 impl Signature for SignatureStubs {
-    fn from_bytes(_bytes: &[u8]) -> Result<Self, InvalidSignature> {
+    fn from_bytes(_bytes: &RawSignature) -> Self {
         unimplemented!()
     }
 
-    fn to_bytes(&self) -> [u8; SIGNATURE_LENGTH] {
+    fn to_bytes(&self) -> RawSignature {
         unimplemented!()
     }
 }
@@ -448,15 +457,11 @@ impl KeyPair for KeyPairStubs {
     type PublicKey = PublicKeyStubs;
     type Signature = SignatureStubs;
 
-    fn generate() -> Self {
+    fn private_key(&self) -> RawPrivateKey {
         unimplemented!()
     }
 
-    fn to_bytes(&self) -> [u8; KEY_PAIR_LENGTH] {
-        unimplemented!()
-    }
-
-    fn from_bytes(_bytes: [u8; KEY_PAIR_LENGTH]) -> Result<Self, InvalidBytes>
+    fn from_private_key(_bytes: &RawPrivateKey) -> Self
     where
         Self: Sized,
     {
@@ -464,6 +469,10 @@ impl KeyPair for KeyPairStubs {
     }
 
     fn sign(&self, _msg: &[u8]) -> Self::Signature {
+        unimplemented!()
+    }
+
+    fn generate() -> Self {
         unimplemented!()
     }
 

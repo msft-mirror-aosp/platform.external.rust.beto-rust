@@ -33,9 +33,7 @@ mod tests;
 
 use array_view::ArrayView;
 use core::fmt;
-use crypto_provider::aes::BLOCK_SIZE;
-use crypto_provider::hmac::Hmac;
-use crypto_provider::CryptoProvider;
+use crypto_provider::{aes::BLOCK_SIZE, CryptoProvider};
 use ldt::{LdtDecryptCipher, LdtEncryptCipher, LdtError, Mix, Padder, Swap, XorPadder};
 use ldt_tbc::TweakableBlockCipher;
 use np_hkdf::{legacy_ldt_expanded_salt, NpHmacSha256Key, NpKeySeedHkdf};
@@ -119,7 +117,7 @@ pub struct LdtNpAdvDecrypter<
 > {
     ldt_decrypter: LdtDecryptCipher<B, T, M>,
     metadata_key_tag: [u8; 32],
-    metadata_key_hmac_key: np_hkdf::NpHmacSha256Key<C>,
+    metadata_key_hmac_key: NpHmacSha256Key<C>,
 }
 
 impl<const B: usize, const O: usize, T, M, C> LdtNpAdvDecrypter<B, O, T, M, C>
@@ -158,9 +156,8 @@ where
                 LdtError::InvalidLength(l) => LdtAdvDecryptError::InvalidLength(l),
             })
             .and_then(|_| {
-                let mut hmac = self.metadata_key_hmac_key.build_hmac();
-                hmac.update(&buffer[..NP_LEGACY_METADATA_KEY_LEN]);
-                hmac.verify_slice(&self.metadata_key_tag)
+                self.metadata_key_hmac_key
+                    .verify_hmac(&buffer[..NP_LEGACY_METADATA_KEY_LEN], self.metadata_key_tag)
                     .map_err(|_| LdtAdvDecryptError::MacMismatch)
                     .map(|_| {
                         ArrayView::try_from_array(buffer, payload.len())

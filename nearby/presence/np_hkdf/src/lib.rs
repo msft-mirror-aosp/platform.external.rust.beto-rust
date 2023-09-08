@@ -70,6 +70,20 @@ impl<C: CryptoProvider> NpHmacSha256Key<C> {
         hmac.update(data);
         hmac.finalize()
     }
+
+    /// Build an HMAC, update it with the provided `data`, and verify it.
+    ///
+    /// This is convenient for one-and-done HMAC usage rather than incrementally accumulating
+    /// the final MAC.
+    pub fn verify_hmac(
+        &self,
+        data: &[u8],
+        expected_mac: [u8; 32],
+    ) -> Result<(), crypto_provider::hmac::MacError> {
+        let mut hmac = self.build_hmac();
+        hmac.update(data);
+        hmac.verify(expected_mac)
+    }
 }
 
 impl<C: CryptoProvider> From<[u8; 32]> for NpHmacSha256Key<C> {
@@ -111,18 +125,18 @@ impl<C: CryptoProvider> NpKeySeedHkdf<C> {
         self.hkdf.derive_hmac_sha256_key(b"Legacy metadata key verification HMAC key")
     }
 
-    /// AES-GCM IV used when decrypting metadata
+    /// AES-GCM nonce used when decrypting metadata
     #[allow(clippy::expect_used)]
-    pub fn legacy_metadata_iv(&self) -> [u8; 12] {
-        self.hkdf.derive_array(b"Legacy Metadata IV").expect("IV is a valid length")
+    pub fn legacy_metadata_nonce(&self) -> [u8; 12] {
+        self.hkdf.derive_array(b"Legacy Metadata Nonce").expect("Nonce is a valid length")
     }
 
-    /// AES-GCM IV used when decrypting metadata.
+    /// AES-GCM nonce used when decrypting metadata.
     ///
     /// Shared between signed and unsigned since they use the same credential.
     #[allow(clippy::expect_used)]
-    pub fn extended_metadata_iv(&self) -> [u8; 12] {
-        self.hkdf.derive_array(b"Metadata IV").expect("IV is a valid length")
+    pub fn extended_metadata_nonce(&self) -> [u8; 12] {
+        self.hkdf.derive_array(b"Metadata Nonce").expect("Nonce is a valid length")
     }
 
     /// HMAC key used when verifying the raw metadata key extracted from an advertisement
