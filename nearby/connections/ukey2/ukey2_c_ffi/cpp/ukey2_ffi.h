@@ -46,7 +46,7 @@ class D2DConnectionContextV1 {
         // -------------------------------------------------------------------------------------------
         //  Protocol version | Encode sequence number | Decode sequence number | Encode key | Decode key
         //    (always 1)
-        static D2DRestoreConnectionContextV1Result FromSavedSession(std::string saved_session);
+        static D2DRestoreConnectionContextV1Result FromSavedSession(std::string data);
 
     private:
         friend class Ukey2Handshake;

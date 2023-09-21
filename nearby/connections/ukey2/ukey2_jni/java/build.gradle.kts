@@ -27,6 +27,7 @@ plugins {
     // Apply the java-library plugin for API and implementation separation.
     `java-library`
     kotlin("jvm") version "1.8.0"
+    id("me.champeau.jmh") version "0.7.1"
 }
 
 repositories {
@@ -47,6 +48,10 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
+}
+
+tasks.jmh {
+    jvmArgs.value(mutableListOf("-Djava.library.path=../../../../target/release"))
 }
 
 tasks.test {

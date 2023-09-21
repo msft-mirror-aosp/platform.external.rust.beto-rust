@@ -116,27 +116,26 @@ fn extract_string(line: &str) -> String {
 }
 
 fn run_test<E>(
-    pub_key: Vec<u8>,
-    secret_key: Vec<u8>,
+    expected_pub_key: Vec<u8>,
+    private_key: Vec<u8>,
     sig: Vec<u8>,
     msg: Vec<u8>,
 ) -> Result<(), &'static str>
 where
     E: Ed25519Provider,
 {
-    let kp_bytes: [u8; 64] = [secret_key.as_slice(), pub_key.as_slice()]
-        .concat()
-        .try_into()
-        .map_err(|_| "invalid length keypair")?;
-    let kp = E::KeyPair::from_bytes(kp_bytes)
-        .map_err(|_| "Should be able to create Keypair from bytes")?;
+    let private_key_bytes: [u8; 32] =
+        private_key.as_slice().try_into().expect("Secret key is the wrong length");
+    let kp = E::KeyPair::from_private_key(&private_key_bytes);
 
     let sig_result = kp.sign(msg.as_slice());
     (sig.as_slice() == sig_result.to_bytes()).then_some(()).ok_or("sig not matching expected")?;
-    let signature = E::Signature::from_bytes(sig.as_slice())
-        .map_err(|_| "unable to parse sign from test case")?;
+    let signature = E::Signature::from_bytes(
+        sig.as_slice().try_into().expect("Test signature should be the correct length"),
+    );
 
     let pub_key = kp.public();
+    assert_eq!(pub_key.to_bytes().as_slice(), expected_pub_key.as_slice());
     pub_key.verify_strict(msg.as_slice(), &signature).map_err(|_| "verify failed")?;
 
     Ok(())
