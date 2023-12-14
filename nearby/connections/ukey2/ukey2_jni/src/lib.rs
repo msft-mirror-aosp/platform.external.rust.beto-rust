@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! JNI bindings for the ukey2 rust implementation
+
+#![allow(unsafe_code, clippy::expect_used)]
+//TODO: remove this and fix instances of unwrap/panic
+#![allow(clippy::unwrap_used, clippy::panic)]
+
 use std::collections::HashMap;
 
 use jni::objects::JClass;
@@ -34,13 +40,7 @@ use ukey2_connections::{
     ServerD2DHandshakeContext,
 };
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "rustcrypto")] {
-        use crypto_provider_rustcrypto::RustCrypto as CryptoProvider;
-    } else {
-        use crypto_provider_openssl::Openssl as CryptoProvider;
-    }
-}
+use crypto_provider_default::CryptoProviderImpl as CryptoProvider;
 // Handle management
 
 type D2DBox = Box<dyn D2DHandshakeContext>;
@@ -58,14 +58,28 @@ fn generate_handle() -> u64 {
 }
 
 pub(crate) fn insert_handshake_handle(item: D2DBox) -> u64 {
-    let handle = generate_handle();
-    HANDLE_MAPPING.lock().insert(handle, item);
+    let mut handle = generate_handle();
+    let map = HANDLE_MAPPING.lock();
+    while map.contains_key(&handle) {
+        handle = generate_handle();
+    }
+
+    let result = HANDLE_MAPPING.lock().insert(handle, item);
+    // result should always be None since we checked that handle map does not contain the key already
+    assert!(result.is_none());
     handle
 }
 
 pub(crate) fn insert_conn_handle(item: ConnectionBox) -> u64 {
-    let handle = generate_handle();
-    CONNECTION_HANDLE_MAPPING.lock().insert(handle, item);
+    let mut handle = generate_handle();
+    let map = CONNECTION_HANDLE_MAPPING.lock();
+    while map.contains_key(&handle) {
+        handle = generate_handle();
+    }
+
+    let result = CONNECTION_HANDLE_MAPPING.lock().insert(handle, item);
+    // result should always be None since we checked that handle map does not contain the key already
+    assert!(result.is_none());
     handle
 }
 
@@ -77,10 +91,11 @@ enum JniError {
     HandshakeError(HandshakeError),
 }
 
-// D2DHandshakeContext
+/// Tells the caller whether the handshake has completed or not. If the handshake is complete,
+/// the caller may call `to_connection_context`to obtain a connection context.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_is_1handshake_1complete(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jboolean {
@@ -94,6 +109,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     is_complete as jboolean
 }
 
+/// Creates a new handshake context
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_create_1context(
     _: JNIEnv,
@@ -113,9 +129,10 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     }
 }
 
+/// Constructs the next message that should be sent in the handshake.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_get_1next_1handshake_1message(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -135,11 +152,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     }
 }
 
-#[no_mangle]
+/// Parses a handshake message and advances the internal state of the context.
+// Safety: We know the message pointer is safe as it is coming directly from the JVM.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-/// Safety: We know the message pointer is safe as it is coming directly from the JVM.
+#[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_parse_1handshake_1message(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     message: jbyteArray,
@@ -168,9 +186,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     }
 }
 
+/// Returns the `CompletedHandshake` using the results from this handshake context. May only
+/// be called if `is_handshake_complete` returns true.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_get_1verification_1string(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     length: jint,
@@ -205,9 +225,11 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
     }
 }
 
+/// Creates a [`D2DConnectionContextV1`] using the results of the handshake. May only be called
+/// if `is_handshake_complete` returns true.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHandshakeContext_to_1connection_1context(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jlong {
@@ -228,18 +250,19 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DHands
         .expect("failed to find error class");
         return -1;
     } else {
-        HANDLE_MAPPING.lock().remove(&(context_handle as u64));
+        let _ = HANDLE_MAPPING.lock().remove(&(context_handle as u64));
     }
     insert_conn_handle(Box::new(conn_context.unwrap())) as jlong
 }
 
-// D2DConnectionContextV1
-#[no_mangle]
+/// Once initiator and responder have exchanged public keys, use this method to encrypt and
+/// sign a payload. Both initiator and responder devices can use this message.
+// Safety: We know the payload and associated_data pointers are safe as they are coming directly
+// from the JVM.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-/// Safety: We know the payload and associated_data pointers are safe as they are coming directly
-/// from the JVM.
+#[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_encode_1message_1to_1peer(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     payload: jbyteArray,
@@ -274,12 +297,15 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     }
 }
 
-#[no_mangle]
+/// Once `InitiatorHello` and `ResponderHello` (and payload) are exchanged, use this method to
+/// decrypt and verify a message received from the other device. Both initiator and responder
+/// devices can use this message.
+// Safety: We know the message and associated_data pointers are safe as they are coming directly
+// from the JVM.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-/// Safety: We know the message and associated_data pointers are safe as they are coming directly
-/// from the JVM.
+#[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_decode_1message_1from_1peer(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     message: jbyteArray,
@@ -324,39 +350,43 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     }
 }
 
+/// Returns the last sequence number used to encode a message.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_get_1sequence_1number_1for_1encoding(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jint {
     if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
-        ctx.get_sequence_number_for_encoding() as jint
+        ctx.get_sequence_number_for_encoding()
     } else {
         env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
             .expect("failed to find error class");
-        -1 as jint
+        -1
     }
 }
 
+/// Returns the last sequence number used to decode a message.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_get_1sequence_1number_1for_1decoding(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jint {
     if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get(&(context_handle as u64)) {
-        ctx.get_sequence_number_for_decoding() as jint
+        ctx.get_sequence_number_for_decoding()
     } else {
         env.throw_new("com/google/security/cryptauth/lib/securegcm/BadHandleException", "")
             .expect("failed to find error class");
-        -1 as jint
+        -1
     }
 }
 
+/// Creates a saved session that can later be used for resumption. The session data may be
+/// persisted, but it must be stored in a secure location.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_save_1session(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -370,11 +400,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     }
 }
 
+/// Creates a connection context from a saved session.
+// Safety: We know the session_info pointer is safe because it is coming directly from the JVM.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-/// Safety: We know the session_info pointer is safe because it is coming directly from the JVM.
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_from_1saved_1session(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     session_info: jbyteArray,
 ) -> jlong {
@@ -400,9 +431,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConne
     insert_conn_handle(conn_context_final) as jlong
 }
 
+/// Returns a cryptographic digest (SHA256) of the session keys prepended by the SHA256 hash
+/// of the ASCII string "D2D". Since the server and client share the same session keys, the
+/// resulting session unique is also the same.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_D2DConnectionContextV1_get_1session_1unique(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
