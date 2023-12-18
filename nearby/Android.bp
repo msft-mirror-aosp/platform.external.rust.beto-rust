@@ -76,11 +76,11 @@ rust_library_rlib {
     cargo_pkg_version: "0.1.0",
     srcs: ["crypto/crypto_provider_default/src/lib.rs"],
     edition: "2021",
-    features: ["opensslbssl"],
+    features: ["boringssl"],
     rustlibs: [
         "libcfg_if",
         "libcrypto_provider",
-        "libcrypto_provider_openssl",
+        "libcrypto_provider_boringssl",
     ],
     apex_available: [
         "//apex_available:platform",
@@ -89,20 +89,18 @@ rust_library_rlib {
 }
 
 rust_library_rlib {
-    name: "libcrypto_provider_openssl",
+    name: "libcrypto_provider_boringssl",
     host_supported: true,
-    crate_name: "crypto_provider_openssl",
+    crate_name: "crypto_provider_boringssl",
     cargo_env_compat: true,
     cargo_pkg_version: "0.1.0",
-    cfgs: ["soong"],
-    srcs: ["crypto/crypto_provider_openssl/src/lib.rs"],
+    srcs: ["crypto/crypto_provider_boringssl/src/lib.rs"],
     edition: "2021",
-    features: ["boringssl"],
     rustlibs: [
         "libcfg_if",
         "libcrypto_provider",
         "libcrypto_provider_stubs",
-        "libopenssl",
+        "libbssl_crypto",
         "librand",
     ],
     apex_available: [
