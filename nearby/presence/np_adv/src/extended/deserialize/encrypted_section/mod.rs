@@ -14,18 +14,23 @@
 
 use crate::{
     credential::v1::*,
+    deserialization_arena::DeserializationArenaAllocator,
     extended::{
         deserialize::{
-            parse_non_identity_des, DecryptedSection, EncryptedIdentityMetadata, EncryptionInfo,
-            SectionContents, SectionMic, VerificationMode,
+            DecryptedSection, EncryptedIdentityMetadata, EncryptionInfo, SectionContents,
+            SectionMic, VerificationMode,
         },
         section_signature_payload::*,
-        to_array_view, METADATA_KEY_LEN, NP_ADV_MAX_SECTION_LEN,
+        METADATA_KEY_LEN, NP_ADV_MAX_SECTION_LEN,
     },
-    V1Header, NP_SVC_UUID,
+    MetadataKey, V1Header, NP_SVC_UUID,
 };
-#[cfg(feature = "devtools")]
+
+#[cfg(any(feature = "devtools", test))]
+extern crate alloc;
+#[cfg(any(feature = "devtools", test))]
 use alloc::vec::Vec;
+#[cfg(feature = "devtools")]
 use array_view::ArrayView;
 use core::fmt::Debug;
 use crypto_provider::{
@@ -34,6 +39,8 @@ use crypto_provider::{
     CryptoProvider,
 };
 use np_hkdf::v1_salt::V1Salt;
+
+use super::ArenaOutOfSpace;
 
 #[cfg(test)]
 mod mic_decrypt_tests;
@@ -69,7 +76,7 @@ impl SectionIdentityResolutionContents {
         let mut decrypt_buf = self.metadata_key_ciphertext;
         let aes_key = &identity_resolution_material.aes_key;
         let mut cipher = C::AesCtr128::new(aes_key, NonceAndCounter::from_nonce(self.nonce));
-        cipher.decrypt(&mut decrypt_buf[..]);
+        cipher.apply_keystream(&mut decrypt_buf[..]);
 
         let metadata_key_hmac_key: np_hkdf::NpHmacSha256Key<C> =
             identity_resolution_material.metadata_key_hmac_key.into();
@@ -77,7 +84,7 @@ impl SectionIdentityResolutionContents {
         metadata_key_hmac_key.verify_hmac(&decrypt_buf[..], expected_metadata_key_hmac).ok().map(
             move |_| IdentityMatch {
                 cipher,
-                metadata_key_plaintext: decrypt_buf,
+                metadata_key_plaintext: MetadataKey(decrypt_buf),
                 nonce: self.nonce,
             },
         )
@@ -88,7 +95,7 @@ impl SectionIdentityResolutionContents {
 /// against some particular V1 identity-resolution crypto-materials.
 pub(crate) struct IdentityMatch<C: CryptoProvider> {
     /// Decrypted metadata key ciphertext
-    metadata_key_plaintext: [u8; METADATA_KEY_LEN],
+    metadata_key_plaintext: MetadataKey,
     /// The AES-Ctr nonce to be used in section decryption and verification
     nonce: AesCtrNonce,
     /// The state of the AES-Ctr cipher after successfully decrypting
@@ -98,25 +105,25 @@ pub(crate) struct IdentityMatch<C: CryptoProvider> {
 }
 
 /// Maximum length of a section's contents, after the metadata-key.
+#[allow(unused)]
 const MAX_SECTION_CONTENTS_LEN: usize = NP_ADV_MAX_SECTION_LEN - METADATA_KEY_LEN;
 
 /// Bare, decrypted contents from an encrypted section,
 /// including the decrypted metadata key and the decrypted section ciphertext.
 /// At this point, verification of the plaintext contents has not yet been performed.
-pub(crate) struct RawDecryptedSection {
-    pub(crate) metadata_key_plaintext: [u8; METADATA_KEY_LEN],
+pub(crate) struct RawDecryptedSection<'adv> {
+    pub(crate) metadata_key_plaintext: MetadataKey,
     pub(crate) nonce: AesCtrNonce,
-    pub(crate) plaintext_contents: ArrayView<u8, MAX_SECTION_CONTENTS_LEN>,
+    pub(crate) plaintext_contents: &'adv [u8],
 }
 
 #[cfg(feature = "devtools")]
-impl RawDecryptedSection {
+impl<'adv> RawDecryptedSection<'adv> {
     pub(crate) fn to_raw_bytes(&self) -> ArrayView<u8, NP_ADV_MAX_SECTION_LEN> {
         let mut result = Vec::new();
-        result.extend_from_slice(&self.metadata_key_plaintext);
-        result.extend_from_slice(self.plaintext_contents.as_slice());
-        // Won't panic because of the involved lengths
-        ArrayView::try_from_slice(&result).unwrap()
+        result.extend_from_slice(&self.metadata_key_plaintext.0);
+        result.extend_from_slice(self.plaintext_contents);
+        ArrayView::try_from_slice(&result).expect("Won't panic because of the involved lengths")
     }
 }
 
@@ -173,8 +180,10 @@ impl<'a> EncryptedSectionContents<'a> {
         &self,
     ) -> SectionIdentityResolutionContents {
         let nonce = self.compute_nonce::<C>();
-        let metadata_key_ciphertext: [u8; METADATA_KEY_LEN] =
-            self.all_ciphertext[..METADATA_KEY_LEN].try_into().unwrap();
+        let metadata_key_ciphertext: [u8; METADATA_KEY_LEN] = self.all_ciphertext
+            [..METADATA_KEY_LEN]
+            .try_into()
+            .expect("slice will always fit into same size array");
 
         SectionIdentityResolutionContents { nonce, metadata_key_ciphertext }
     }
@@ -183,33 +192,37 @@ impl<'a> EncryptedSectionContents<'a> {
     /// and returns the raw bytes of the decrypted plaintext.
     pub(crate) fn decrypt_ciphertext<C: CryptoProvider>(
         &self,
+        arena: &mut DeserializationArenaAllocator<'a>,
         mut identity_match: IdentityMatch<C>,
-    ) -> RawDecryptedSection {
+    ) -> Result<RawDecryptedSection<'a>, ArenaOutOfSpace> {
         // Fill decrypt_buf with the ciphertext after the metadata key
-        let mut decrypt_buf = tinyvec::ArrayVec::<[u8; MAX_SECTION_CONTENTS_LEN]>::new();
-        decrypt_buf.extend_from_slice(&self.all_ciphertext[METADATA_KEY_LEN..]);
+        let decrypt_buf =
+            arena.allocate(u8::try_from(self.all_ciphertext.len() - METADATA_KEY_LEN).expect(
+                "all_ciphertext.len() must be in [METADATA_KEY_LEN, NP_ADV_MAX_SECTION_LEN]",
+            ))?;
+        decrypt_buf.copy_from_slice(&self.all_ciphertext[METADATA_KEY_LEN..]);
 
         // Decrypt everything after the metadata key
-        identity_match.cipher.decrypt(&mut decrypt_buf);
+        identity_match.cipher.apply_keystream(decrypt_buf);
 
-        let plaintext_contents = to_array_view(decrypt_buf);
-
-        RawDecryptedSection {
+        Ok(RawDecryptedSection {
             metadata_key_plaintext: identity_match.metadata_key_plaintext,
             nonce: identity_match.nonce,
-            plaintext_contents,
-        }
+            plaintext_contents: decrypt_buf,
+        })
     }
+
     /// Try decrypting into some raw bytes given some raw identity-resolution material.
     #[cfg(feature = "devtools")]
     pub(crate) fn try_resolve_identity_and_decrypt<P: CryptoProvider>(
         &self,
+        allocator: &mut DeserializationArenaAllocator<'a>,
         identity_resolution_material: &SectionIdentityResolutionMaterial,
-    ) -> Option<ArrayView<u8, NP_ADV_MAX_SECTION_LEN>> {
+    ) -> Option<Result<ArrayView<u8, NP_ADV_MAX_SECTION_LEN>, ArenaOutOfSpace>> {
         let identity_resolution_contents = self.compute_identity_resolution_contents::<P>();
         identity_resolution_contents.try_match(identity_resolution_material).map(|identity_match| {
-            let decrypted_section = self.decrypt_ciphertext::<P>(identity_match);
-            decrypted_section.to_raw_bytes()
+            let decrypted_section = self.decrypt_ciphertext::<P>(allocator, identity_match)?;
+            Ok(decrypted_section.to_raw_bytes())
         })
     }
 }
@@ -225,13 +238,14 @@ impl<'a> SignatureEncryptedSection<'a> {
     /// with some paired verification material for the matched identity.
     pub(crate) fn try_deserialize<P>(
         &self,
+        arena: &mut DeserializationArenaAllocator<'a>,
         identity_match: IdentityMatch<P>,
         verification_material: &SignedSectionVerificationMaterial,
-    ) -> Result<DecryptedSection, DeserializationError<SignatureVerificationError>>
+    ) -> Result<DecryptedSection<'a>, DeserializationError<SignatureVerificationError>>
     where
         P: CryptoProvider,
     {
-        let raw_decrypted = self.contents.decrypt_ciphertext(identity_match);
+        let raw_decrypted = self.contents.decrypt_ciphertext(arena, identity_match)?;
         let metadata_key = raw_decrypted.metadata_key_plaintext;
         let nonce = raw_decrypted.nonce;
         let remaining = raw_decrypted.plaintext_contents;
@@ -241,13 +255,8 @@ impl<'a> SignatureEncryptedSection<'a> {
         }
 
         // should not panic due to above check
-        let (non_identity_des, sig) = remaining
-            .as_slice()
-            .split_at(remaining.len() - crypto_provider::ed25519::SIGNATURE_LENGTH);
-
-        // de offset 2 because of leading encryption info and identity DEs
-        let (_, ref_des) = parse_non_identity_des(2)(non_identity_des)
-            .map_err(|_| DeserializationError::DeParseError)?;
+        let (non_identity_des, sig) =
+            remaining.split_at(remaining.len() - crypto_provider::ed25519::SIGNATURE_LENGTH);
 
         // All implementations only check for 64 bytes, and this will always result in a 64 byte signature.
         let expected_signature =
@@ -279,16 +288,20 @@ impl<'a> SignatureEncryptedSection<'a> {
             VerificationMode::Signature,
             metadata_key,
             salt.into(),
-            SectionContents::new(self.contents.section_header, &ref_des),
+            // de offset 2 because of leading encryption info and identity DEs
+            SectionContents::new(self.contents.section_header, non_identity_des, 2),
         ))
     }
+
     /// Try decrypting into some raw bytes given some raw signed crypto-material.
     #[cfg(feature = "devtools")]
     pub(crate) fn try_resolve_identity_and_decrypt<P: CryptoProvider>(
         &self,
+        allocator: &mut DeserializationArenaAllocator<'a>,
         identity_resolution_material: &SignedSectionIdentityResolutionMaterial,
-    ) -> Option<ArrayView<u8, NP_ADV_MAX_SECTION_LEN>> {
+    ) -> Option<Result<ArrayView<u8, NP_ADV_MAX_SECTION_LEN>, ArenaOutOfSpace>> {
         self.contents.try_resolve_identity_and_decrypt::<P>(
+            allocator,
             identity_resolution_material.as_raw_resolution_material(),
         )
     }
@@ -297,6 +310,7 @@ impl<'a> SignatureEncryptedSection<'a> {
     #[cfg(test)]
     pub(crate) fn try_resolve_identity_and_deserialize<P: CryptoProvider>(
         &self,
+        allocator: &mut DeserializationArenaAllocator<'a>,
         identity_resolution_material: &SignedSectionIdentityResolutionMaterial,
         verification_material: &SignedSectionVerificationMaterial,
     ) -> Result<
@@ -308,9 +322,9 @@ impl<'a> SignatureEncryptedSection<'a> {
         match section_identity_resolution_contents
             .try_match::<P>(identity_resolution_material.as_raw_resolution_material())
         {
-            Some(identity_match) => {
-                self.try_deserialize(identity_match, verification_material).map_err(|e| e.into())
-            }
+            Some(identity_match) => self
+                .try_deserialize(allocator, identity_match, verification_material)
+                .map_err(|e| e.into()),
             None => Err(IdentityResolutionOrDeserializationError::IdentityMatchingError),
         }
     }
@@ -353,10 +367,16 @@ impl<V: VerificationError> From<V> for IdentityResolutionOrDeserializationError<
 /// detailed.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum DeserializationError<V: VerificationError> {
-    /// Parsing of decrypted DEs failed
-    DeParseError,
     /// Verification failed
     VerificationError(V),
+    /// The given arena ran out of space
+    ArenaOutOfSpace,
+}
+
+impl<V: VerificationError> From<ArenaOutOfSpace> for DeserializationError<V> {
+    fn from(_: ArenaOutOfSpace) -> Self {
+        Self::ArenaOutOfSpace
+    }
 }
 
 impl<V: VerificationError> From<V> for DeserializationError<V> {
@@ -396,13 +416,14 @@ impl<'a> MicEncryptedSection<'a> {
     /// Returns an error if the credential is incorrect or if the section data is malformed.
     pub(crate) fn try_deserialize<P>(
         &self,
+        allocator: &mut DeserializationArenaAllocator<'a>,
         identity_match: IdentityMatch<P>,
         verification_material: &UnsignedSectionVerificationMaterial,
-    ) -> Result<DecryptedSection, DeserializationError<MicVerificationError>>
+    ) -> Result<DecryptedSection<'a>, DeserializationError<MicVerificationError>>
     where
         P: CryptoProvider,
     {
-        let raw_decrypted = self.contents.decrypt_ciphertext(identity_match);
+        let raw_decrypted = self.contents.decrypt_ciphertext(allocator, identity_match)?;
         let metadata_key = raw_decrypted.metadata_key_plaintext;
         let nonce = raw_decrypted.nonce;
         let remaining_des = raw_decrypted.plaintext_contents;
@@ -421,10 +442,6 @@ impl<'a> MicEncryptedSection<'a> {
             .verify_truncated_left(&self.mic.mic)
             .map_err(|_e| MicVerificationError::MicMismatch)?;
 
-        // offset 2 for encryption info and identity DEs
-        let (_, ref_des) = parse_non_identity_des(2)(remaining_des.as_slice())
-            .map_err(|_| DeserializationError::DeParseError)?;
-
         let salt = self.contents.salt::<P>();
 
         Ok(DecryptedSection::new(
@@ -432,7 +449,8 @@ impl<'a> MicEncryptedSection<'a> {
             VerificationMode::Mic,
             metadata_key,
             salt.into(),
-            SectionContents::new(self.contents.section_header, &ref_des),
+            // offset 2 for encryption info and identity DEs
+            SectionContents::new(self.contents.section_header, remaining_des, 2),
         ))
     }
 
@@ -440,9 +458,11 @@ impl<'a> MicEncryptedSection<'a> {
     #[cfg(feature = "devtools")]
     pub(crate) fn try_resolve_identity_and_decrypt<P: CryptoProvider>(
         &self,
+        allocator: &mut DeserializationArenaAllocator<'a>,
         identity_resolution_material: &UnsignedSectionIdentityResolutionMaterial,
-    ) -> Option<ArrayView<u8, NP_ADV_MAX_SECTION_LEN>> {
+    ) -> Option<Result<ArrayView<u8, NP_ADV_MAX_SECTION_LEN>, ArenaOutOfSpace>> {
         self.contents.try_resolve_identity_and_decrypt::<P>(
+            allocator,
             identity_resolution_material.as_raw_resolution_material(),
         )
     }
@@ -451,6 +471,7 @@ impl<'a> MicEncryptedSection<'a> {
     #[cfg(test)]
     pub(crate) fn try_resolve_identity_and_deserialize<P: CryptoProvider>(
         &self,
+        allocator: &mut DeserializationArenaAllocator<'a>,
         identity_resolution_material: &UnsignedSectionIdentityResolutionMaterial,
         verification_material: &UnsignedSectionVerificationMaterial,
     ) -> Result<DecryptedSection, IdentityResolutionOrDeserializationError<MicVerificationError>>
@@ -460,9 +481,9 @@ impl<'a> MicEncryptedSection<'a> {
         match section_identity_resolution_contents
             .try_match::<P>(identity_resolution_material.as_raw_resolution_material())
         {
-            Some(identity_match) => {
-                self.try_deserialize(identity_match, verification_material).map_err(|e| e.into())
-            }
+            Some(identity_match) => self
+                .try_deserialize(allocator, identity_match, verification_material)
+                .map_err(|e| e.into()),
             None => Err(IdentityResolutionOrDeserializationError::IdentityMatchingError),
         }
     }

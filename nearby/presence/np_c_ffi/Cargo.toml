@@ -5,16 +5,16 @@ edition = "2021"
 publish = false
 
 [dependencies]
-# TODO: We need to make this configurable for this crate and for np_ffi below it.
-crypto_provider_default = { path = "../../crypto/crypto_provider_default", features = ["rustcrypto"] }
 np_ffi_core = { path = "../np_ffi_core" }
-
-spin = "0.9.8"
-libc_alloc = "1.0.4"
-panic-abort = "0.3.2"
+lock_adapter = {path = "../../util/lock_adapter"}
 
 [build-dependencies]
 cbindgen = "0.24.5"
+
+[features]
+default = ["rustcrypto"]
+rustcrypto = ["np_ffi_core/rustcrypto"]
+boringssl = ["np_ffi_core/boringssl"]
 
 [lib]
 # boringssl and bssl-sys are built as a static lib, so we need to as well
