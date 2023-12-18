@@ -14,11 +14,14 @@
 
 #include "nearby_protocol.h"
 #include "shared_test_util.h"
+#include "np_cpp_test.h"
 
 #include "gtest/gtest.h"
 
-TEST(NpFfiDeserializeV1Tests, V1SimpleTestCase) {
-  auto maybe_credential_book = nearby_protocol::CredentialBook::TryCreate();
+TEST_F(NpCppTest, V1SimpleTestCase) {
+  auto maybe_credential_slab = nearby_protocol::CredentialSlab::TryCreate();
+  ASSERT_TRUE(maybe_credential_slab.ok());
+  auto maybe_credential_book = nearby_protocol::CredentialBook::TryCreateFromSlab(maybe_credential_slab.value());
   ASSERT_TRUE(maybe_credential_book.ok());
 
   auto deserialize_result =
@@ -47,7 +50,7 @@ TEST(NpFfiDeserializeV1Tests, V1SimpleTestCase) {
 
   auto de = section.value().TryGetDataElement(0);
   ASSERT_TRUE(de.ok());
-  ASSERT_EQ(de.value().GetDataElementTypeCode(), 5);
+  ASSERT_EQ(de.value().GetDataElementTypeCode(), (uint8_t)5);
 
   auto payload = de.value().GetPayload();
   auto vec = payload.ToVector();
@@ -55,8 +58,9 @@ TEST(NpFfiDeserializeV1Tests, V1SimpleTestCase) {
   ASSERT_EQ(vec, expected);
 }
 
-TEST(NpFfiDeserializeV1Tests, TestV1AdvMoveConstructor) {
-  auto book = nearby_protocol::CredentialBook::TryCreate().value();
+TEST_F(NpCppTest, TestV1AdvMoveConstructor) {
+  auto slab = nearby_protocol::CredentialSlab::TryCreate().value();
+  auto book = nearby_protocol::CredentialBook::TryCreateFromSlab(slab).value();
   auto result = nearby_protocol::Deserializer::DeserializeAdvertisement(
       V1AdvSimple, book);
   ASSERT_EQ(result.GetKind(),
@@ -91,8 +95,9 @@ TEST(NpFfiDeserializeV1Tests, TestV1AdvMoveConstructor) {
                "");
 }
 
-TEST(NpFfiDeserializeV1Tests, TestV1AdvMoveAssignment) {
-  auto book = nearby_protocol::CredentialBook::TryCreate().value();
+TEST_F(NpCppTest, TestV1AdvMoveAssignment) {
+  auto slab = nearby_protocol::CredentialSlab::TryCreate().value();
+  auto book = nearby_protocol::CredentialBook::TryCreateFromSlab(slab).value();
   auto result = nearby_protocol::Deserializer::DeserializeAdvertisement(
       V1AdvSimple, book);
   ASSERT_EQ(result.GetKind(),
@@ -151,10 +156,10 @@ bool TryDeserializeNewV1Adv(nearby_protocol::CredentialBook &book) {
          np_ffi::internal::DeserializeAdvertisementResultKind::V1;
 }
 
-TEST(NpFfiDeserializeV1Tests, TestSectionOwnership) {
-  // Capping the max number so we can verify that de-allocations are happening
-  nearby_protocol::GlobalConfig::SetMaxNumDeserializedV1Advertisements(1);
-  auto maybe_credential_book = nearby_protocol::CredentialBook::TryCreate();
+TEST_F(NpCppTest, TestSectionOwnership) {
+  auto maybe_credential_slab = nearby_protocol::CredentialSlab::TryCreate();
+  ASSERT_TRUE(maybe_credential_slab.ok());
+  auto maybe_credential_book = nearby_protocol::CredentialBook::TryCreateFromSlab(maybe_credential_slab.value());
   ASSERT_TRUE(maybe_credential_book.ok());
 
   {
@@ -163,6 +168,12 @@ TEST(NpFfiDeserializeV1Tests, TestSectionOwnership) {
               nearby_protocol::DeserializedV1IdentityKind::Plaintext);
     ASSERT_EQ(section.NumberOfDataElements(), 1);
     ASSERT_TRUE(section.TryGetDataElement(0).ok());
+
+    auto section2 = GetSection(maybe_credential_book.value());
+    ASSERT_EQ(section2.GetIdentityKind(),
+              nearby_protocol::DeserializedV1IdentityKind::Plaintext);
+    ASSERT_EQ(section2.NumberOfDataElements(), 1);
+    ASSERT_TRUE(section2.TryGetDataElement(0).ok());
 
     ASSERT_FALSE(TryDeserializeNewV1Adv(maybe_credential_book.value()));
   }
@@ -175,7 +186,7 @@ TEST(NpFfiDeserializeV1Tests, TestSectionOwnership) {
 /*
  * Multiple sections are not supported in plaintext advertisements
  * TODO Update the below test to use encrypted sections
-TEST(NpFfiDeserializeV1Tests, V1MultipleSections) {
+TEST(NpCppTest, V1MultipleSections) {
   auto maybe_credential_book = nearby_protocol::CredentialBook::TryCreate();
   ASSERT_TRUE(maybe_credential_book.ok());
 
