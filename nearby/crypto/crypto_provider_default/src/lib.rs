@@ -16,8 +16,6 @@
 //! feature flag.
 
 #![no_std]
-#![forbid(unsafe_code)]
-#![deny(missing_docs)]
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "rustcrypto")] {
