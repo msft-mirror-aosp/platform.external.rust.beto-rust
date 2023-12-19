@@ -234,7 +234,6 @@ rust_library_rlib {
         "librand",
         "libukey2_proto",
     ],
-    proc_macros: ["libderive_getters"],
     apex_available: [
         "//apex_available:platform",
         "//apex_available:anyapex",
