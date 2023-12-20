@@ -12,24 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 extern crate std;
 
 use super::*;
+use crate::deserialization_arena;
 use crate::extended::data_elements::TxPowerDataElement;
+use crate::extended::deserialize::DataElementParseError;
 use crate::extended::serialize::{AdvertisementType, SingleTypeDataElement, WriteDataElement};
 use crate::shared_data::TxPower;
 use crate::{
-    credential::v1::MinimumFootprintV1CryptoMaterial,
+    credential::{v1::V1, SimpleBroadcastCryptoMaterial},
     de_type::EncryptedIdentityDataElementType,
     extended::{
         deserialize::{
             encrypted_section::{
-                DeserializationError, EncryptedSectionContents,
-                IdentityResolutionOrDeserializationError, MicVerificationError,
+                EncryptedSectionContents, IdentityResolutionOrDeserializationError,
+                MicVerificationError,
             },
             parse_sections,
-            test_stubs::{HkdfCryptoMaterial, IntermediateSectionExt},
-            CiphertextSection, OffsetDataElement, RawV1Salt,
+            test_stubs::IntermediateSectionExt,
+            CiphertextSection, DataElement, RawV1Salt,
         },
         serialize::{AdvBuilder, CapacityLimitedVec, MicEncryptedSectionEncoder},
     },
@@ -42,20 +46,20 @@ use std::{prelude::rust_2021::*, vec};
 
 #[test]
 fn deserialize_mic_encrypted_correct_keys() {
-    let metadata_key = [1; 16];
+    let metadata_key = MetadataKey([1; 16]);
     let key_seed = [2; 32];
     let raw_salt = RawV1Salt([3; 16]);
     let section_salt = V1Salt::<CryptoProviderImpl>::from(raw_salt);
     let identity_type = EncryptedIdentityDataElementType::Private;
-    let key_seed_hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&key_seed);
     let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
 
+    let broadcast_cm = SimpleBroadcastCryptoMaterial::<V1>::new(key_seed, metadata_key);
+
     let mut section_builder = adv_builder
-        .section_builder(MicEncryptedSectionEncoder::new_for_testing(
+        .section_builder(MicEncryptedSectionEncoder::<CryptoProviderImpl>::new(
             identity_type,
             V1Salt::from(*section_salt.as_array_ref()),
-            &metadata_key,
-            &key_seed_hkdf,
+            &broadcast_cm,
         ))
         .unwrap();
 
@@ -88,19 +92,20 @@ fn deserialize_mic_encrypted_correct_keys() {
     let keypair = np_ed25519::KeyPair::<CryptoProviderImpl>::generate();
 
     // deserializing to Section works
-    let crypto_material = MinimumFootprintV1CryptoMaterial::new::<CryptoProviderImpl>(
-        key_seed,
-        key_seed_hkdf.extended_unsigned_metadata_key_hmac_key().calculate_hmac(&metadata_key),
-        key_seed_hkdf.extended_signed_metadata_key_hmac_key().calculate_hmac(&metadata_key),
-        keypair.public(),
-    );
-    let identity_resolution_material =
-        crypto_material.unsigned_identity_resolution_material::<CryptoProviderImpl>();
-    let verification_material =
-        crypto_material.unsigned_verification_material::<CryptoProviderImpl>();
+    let discovery_credential =
+        SimpleSignedBroadcastCryptoMaterial::new(key_seed, metadata_key, keypair.private_key())
+            .derive_v1_discovery_credential::<CryptoProviderImpl>();
 
+    let identity_resolution_material =
+        discovery_credential.unsigned_identity_resolution_material::<CryptoProviderImpl>();
+    let verification_material =
+        discovery_credential.unsigned_verification_material::<CryptoProviderImpl>();
+
+    let arena = deserialization_arena!();
+    let mut allocator = arena.into_allocator();
     let section = contents
         .try_resolve_identity_and_deserialize::<CryptoProviderImpl>(
+            &mut allocator,
             &identity_resolution_material,
             &verification_material,
         )
@@ -114,27 +119,28 @@ fn deserialize_mic_encrypted_correct_keys() {
             raw_salt,
             SectionContents {
                 section_header: 19 // encryption info de
-                    + 2 // de header
-                    + 16 // metadata key
-                    + 2 // de contents
-                    + 16, // mic hmac tag
+                        + 2 // de header
+                        + 16 // metadata key
+                        + 2 // de contents
+                        + 16, // mic hmac tag
                 // battery DE
-                de_data: ArrayView::try_from_slice(&[5]).unwrap(),
-                data_elements: vec![OffsetDataElement {
-                    offset: 2.into(),
-                    de_type: 0x05_u8.into(),
-                    start_of_contents: 0,
-                    contents_len: 1
-                }]
+                data_element_start_offset: 2,
+                de_region_excl_identity: &[txpower_de.de_header().serialize().as_slice(), &[5],]
+                    .concat(),
             }
         ),
         section
     );
+    let data_elements = section.collect_data_elements().unwrap();
+    assert_eq!(
+        data_elements,
+        &[DataElement { offset: 2.into(), de_type: 0x05_u8.into(), contents: &[5] }]
+    );
 
     assert_eq!(
-        vec![(DataElementOffset::from(2_usize), TxPowerDataElement::DE_TYPE, vec![5_u8])],
-        section
-            .data_elements()
+        vec![(DataElementOffset::from(2_u8), TxPowerDataElement::DE_TYPE, vec![5_u8])],
+        data_elements
+            .into_iter()
             .map(|de| (de.offset(), de.de_type(), de.contents().to_vec()))
             .collect::<Vec<_>>()
     );
@@ -173,18 +179,23 @@ fn deserialize_mic_encrypted_correct_keys() {
             contents.contents.compute_identity_resolution_contents::<CryptoProviderImpl>();
         let identity_match = identity_resolution_contents
             .try_match::<CryptoProviderImpl>(
-                identity_resolution_material.as_raw_resolution_material(),
+                &identity_resolution_material.into_raw_resolution_material(),
             )
             .unwrap();
-        let decrypted = contents.contents.decrypt_ciphertext::<CryptoProviderImpl>(identity_match);
+        let arena = deserialization_arena!();
+        let mut allocator = arena.into_allocator();
+        let decrypted = contents
+            .contents
+            .decrypt_ciphertext::<CryptoProviderImpl>(&mut allocator, identity_match)
+            .unwrap();
 
         let mut expected = Vec::new();
         // battery de
         expected.extend_from_slice(txpower_de.clone().de_header().serialize().as_slice());
-        txpower_de.write_de_contents(&mut expected);
+        let _ = txpower_de.write_de_contents(&mut expected);
 
         assert_eq!(metadata_key, decrypted.metadata_key_plaintext);
-        assert_eq!(&expected, decrypted.plaintext_contents.as_slice());
+        assert_eq!(&expected, decrypted.plaintext_contents);
     }
 }
 
@@ -240,7 +251,9 @@ fn deserialize_mic_encrypted_incorrect_expected_metadata_key_hmac_error() {
 fn deserialize_mic_encrypted_incorrect_salt_error() {
     // bad salt -> bad iv -> bad metadata key plaintext
     do_bad_deserialize_tampered(
-        IdentityResolutionOrDeserializationError::IdentityMatchingError,
+        DeserializeError::IdentityResolutionOrDeserializationError(
+            IdentityResolutionOrDeserializationError::IdentityMatchingError,
+        ),
         |_| {},
         |adv| adv[23..39].copy_from_slice(&[0xFF; 16]),
     );
@@ -250,7 +263,7 @@ fn deserialize_mic_encrypted_incorrect_salt_error() {
 fn deserialize_mic_encrypted_de_that_wont_parse() {
     // add an extra byte to the section, leading it to try to parse a DE that doesn't exist
     do_bad_deserialize_tampered(
-        DeserializationError::DeParseError.into(),
+        DeserializeError::DataElementParseError(DataElementParseError::UnexpectedDataAfterEnd),
         |sec| sec.try_push(0xFF).unwrap(),
         |_| {},
     );
@@ -260,7 +273,9 @@ fn deserialize_mic_encrypted_de_that_wont_parse() {
 fn deserialize_mic_encrypted_tampered_mic_error() {
     // flip the a bit in the first MIC byte
     do_bad_deserialize_tampered(
-        MicVerificationError::MicMismatch.into(),
+        DeserializeError::IdentityResolutionOrDeserializationError(
+            MicVerificationError::MicMismatch.into(),
+        ),
         |_| {},
         |adv| {
             let mic_start = adv.len() - 16;
@@ -273,7 +288,9 @@ fn deserialize_mic_encrypted_tampered_mic_error() {
 fn deserialize_mic_encrypted_tampered_payload_error() {
     // flip the last payload bit
     do_bad_deserialize_tampered(
-        MicVerificationError::MicMismatch.into(),
+        DeserializeError::IdentityResolutionOrDeserializationError(
+            MicVerificationError::MicMismatch.into(),
+        ),
         |_| {},
         |adv| *adv.last_mut().unwrap() ^= 0x01,
     );
@@ -288,7 +305,7 @@ fn do_bad_deserialize_params<C: CryptoProvider>(
     mic_hmac_key: Option<np_hkdf::NpHmacSha256Key<C>>,
     expected_metadata_key_hmac: Option<[u8; 32]>,
 ) {
-    let metadata_key = [1; 16];
+    let metadata_key = MetadataKey([1; 16]);
     let key_seed = [2; 32];
     let section_salt: V1Salt<C> = [3; 16].into();
     let identity_type = EncryptedIdentityDataElementType::Private;
@@ -296,12 +313,13 @@ fn do_bad_deserialize_params<C: CryptoProvider>(
 
     let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
 
+    let broadcast_cm = SimpleBroadcastCryptoMaterial::<V1>::new(key_seed, metadata_key);
+
     let mut section_builder = adv_builder
-        .section_builder(MicEncryptedSectionEncoder::new_for_testing(
+        .section_builder(MicEncryptedSectionEncoder::<C>::new(
             identity_type,
             section_salt,
-            &metadata_key,
-            &key_seed_hkdf,
+            &broadcast_cm,
         ))
         .unwrap();
 
@@ -336,7 +354,7 @@ fn do_bad_deserialize_params<C: CryptoProvider>(
             .unwrap_or_else(|| key_seed_hkdf.extended_unsigned_metadata_key_hmac_key())
             .as_bytes(),
         expected_metadata_key_hmac: expected_metadata_key_hmac.unwrap_or_else(|| {
-            key_seed_hkdf.extended_unsigned_metadata_key_hmac_key().calculate_hmac(&metadata_key)
+            key_seed_hkdf.extended_unsigned_metadata_key_hmac_key().calculate_hmac(&metadata_key.0)
         }),
     };
     let identity_resolution_material =
@@ -352,6 +370,7 @@ fn do_bad_deserialize_params<C: CryptoProvider>(
         error,
         contents
             .try_resolve_identity_and_deserialize::<C>(
+                &mut deserialization_arena!().into_allocator(),
                 &identity_resolution_material,
                 &verification_material,
             )
@@ -359,28 +378,33 @@ fn do_bad_deserialize_params<C: CryptoProvider>(
     );
 }
 
-fn do_bad_deserialize_tampered<
-    S: Fn(&mut CapacityLimitedVec<u8, NP_ADV_MAX_SECTION_LEN>),
-    A: Fn(&mut Vec<u8>),
->(
-    expected_error: IdentityResolutionOrDeserializationError<MicVerificationError>,
-    mangle_section: S,
-    mangle_adv: A,
+#[derive(Debug, PartialEq)]
+enum DeserializeError {
+    IdentityResolutionOrDeserializationError(
+        IdentityResolutionOrDeserializationError<MicVerificationError>,
+    ),
+    DataElementParseError(DataElementParseError),
+}
+
+fn do_bad_deserialize_tampered(
+    expected_error: DeserializeError,
+    mangle_section: impl Fn(&mut CapacityLimitedVec<u8, NP_ADV_MAX_SECTION_LEN>),
+    mangle_adv: impl Fn(&mut Vec<u8>),
 ) {
-    let metadata_key = [1; 16];
+    let metadata_key = MetadataKey([1; 16]);
     let key_seed = [2; 32];
     let section_salt: V1Salt<CryptoProviderImpl> = [3; 16].into();
     let identity_type = EncryptedIdentityDataElementType::Private;
-    let key_seed_hkdf = np_hkdf::NpKeySeedHkdf::new(&key_seed);
 
     let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
 
+    let broadcast_cm = SimpleBroadcastCryptoMaterial::<V1>::new(key_seed, metadata_key);
+
     let mut section_builder = adv_builder
-        .section_builder(MicEncryptedSectionEncoder::new_for_testing(
+        .section_builder(MicEncryptedSectionEncoder::<CryptoProviderImpl>::new(
             identity_type,
             section_salt,
-            &metadata_key,
-            &key_seed_hkdf,
+            &broadcast_cm,
         ))
         .unwrap();
 
@@ -413,22 +437,35 @@ fn do_bad_deserialize_tampered<
         panic!("incorrect flavor");
     };
 
-    // generate a random key pair since we need _some_ public key
+    // generate a random key pair since we need _some_ public key in our discovery
+    // credential, even if it winds up going unused
     let key_pair = np_ed25519::KeyPair::<CryptoProviderImpl>::generate();
 
-    let crypto_material = HkdfCryptoMaterial::new(&key_seed, &metadata_key, key_pair.public());
-    let identity_resolution_material =
-        crypto_material.unsigned_identity_resolution_material::<CryptoProviderImpl>();
-    let verification_material =
-        crypto_material.unsigned_verification_material::<CryptoProviderImpl>();
+    let discovery_credential =
+        SimpleSignedBroadcastCryptoMaterial::new(key_seed, metadata_key, key_pair.private_key())
+            .derive_v1_discovery_credential::<CryptoProviderImpl>();
 
-    assert_eq!(
-        expected_error,
-        contents
-            .try_resolve_identity_and_deserialize::<CryptoProviderImpl>(
-                &identity_resolution_material,
-                &verification_material,
-            )
-            .unwrap_err()
-    );
+    let identity_resolution_material =
+        discovery_credential.unsigned_identity_resolution_material::<CryptoProviderImpl>();
+    let verification_material =
+        discovery_credential.unsigned_verification_material::<CryptoProviderImpl>();
+
+    match contents.try_resolve_identity_and_deserialize::<CryptoProviderImpl>(
+        &mut deserialization_arena!().into_allocator(),
+        &identity_resolution_material,
+        &verification_material,
+    ) {
+        Ok(section) => {
+            assert_eq!(
+                expected_error,
+                DeserializeError::DataElementParseError(
+                    section.collect_data_elements().unwrap_err()
+                )
+            );
+        }
+        Err(e) => assert_eq!(
+            expected_error,
+            DeserializeError::IdentityResolutionOrDeserializationError(e),
+        ),
+    };
 }

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 extern crate std;
 use super::*;
 use crate::extended::serialize::section_tests::{fill_section_builder, DummyDataElement};
