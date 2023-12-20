@@ -26,6 +26,7 @@ rust_library_rlib {
     rustlibs: [
         "libhex",
         "librand",
+        "libtinyvec",
     ],
     apex_available: [
         "//apex_available:platform",
@@ -56,10 +57,30 @@ rust_library_rlib {
     crate_name: "lock_adapter",
     cargo_env_compat: true,
     cargo_pkg_version: "0.1.0",
-    srcs: ["connections/ukey2/lock_adapter/src/lib.rs"],
+    srcs: ["util/lock_adapter/src/lib.rs"],
     edition: "2021",
     features: [
         "std",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library_rlib {
+    name: "libcrypto_provider_default",
+    host_supported: true,
+    crate_name: "crypto_provider_default",
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    srcs: ["crypto/crypto_provider_default/src/lib.rs"],
+    edition: "2021",
+    features: ["opensslbssl"],
+    rustlibs: [
+        "libcfg_if",
+        "libcrypto_provider",
+        "libcrypto_provider_openssl",
     ],
     apex_available: [
         "//apex_available:platform",
@@ -105,7 +126,7 @@ rust_ffi_shared {
     ],
     rlibs: [
         "libcfg_if",
-        "libcrypto_provider_openssl",
+        "libcrypto_provider_default",
         "liblazy_static",
         "liblock_adapter",
         "liblog_rust",
@@ -162,7 +183,7 @@ rust_ffi_shared {
     // common projects like libjni and libprotobuf.
     rlibs: [
         "libcfg_if",
-        "libcrypto_provider_openssl",
+        "libcrypto_provider_default",
         "libjni",
         "liblazy_static",
         "liblock_adapter",
@@ -213,7 +234,6 @@ rust_library_rlib {
         "librand",
         "libukey2_proto",
     ],
-    proc_macros: ["libderive_getters"],
     apex_available: [
         "//apex_available:platform",
         "//apex_available:anyapex",

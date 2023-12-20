@@ -51,6 +51,7 @@ namespace nearby_protocol {
 
 // Re-exporting cbindgen generated types which are used in the public API
 using np_ffi::internal::BooleanActionType;
+using np_ffi::internal::CreateCredentialSlabResultKind;
 using np_ffi::internal::CreateCredentialBookResultKind;
 using np_ffi::internal::DeserializeAdvertisementResultKind;
 using np_ffi::internal::DeserializedV0AdvertisementKind;
@@ -71,7 +72,6 @@ class DeserializeAdvertisementResult;
 
 // V0 Classes
 class DeserializedV0Advertisement;
-class DeserializedV0Identity;
 class LegibleDeserializedV0Advertisement;
 class V0DataElement;
 class V0Payload;
@@ -109,6 +109,12 @@ public:
   // np_ffi_global_config_set_num_shards in np_cpp_ffi_functions.h for more info
   static void SetNumShards(uint8_t num_shards);
 
+  // Sets the maximum number of active handles to credential slabs which may be
+  // active at any one time. See
+  // np_ffi_global_config_set_max_num_credential_slabs in np_cpp_ffi_functions.h
+  // for more info
+  static void SetMaxNumCredentialSlabs(uint32_t max_num_credential_slabs);
+
   // Sets the maximum number of active handles to credential books which may be
   // active at any one time. See
   // np_ffi_global_config_set_max_num_credential_books in np_cpp_ffi_functions.h
@@ -126,6 +132,37 @@ public:
   // which may be active at any one time
   static void SetMaxNumDeserializedV1Advertisements(
       uint32_t max_num_deserialized_v1_advertisements);
+};
+
+// Holds the credentials used in the construction of a credential book
+// using CredentialBook::TryCreateFromSlab()
+class CredentialSlab {
+public:
+  // Don't allow copy constructor or copy assignment, since that would result in
+  // the underlying handle being freed multiple times
+  CredentialSlab(const CredentialSlab &other) = delete;
+  CredentialSlab &operator=(const CredentialSlab &other) = delete;
+
+  // Move constructor and move assignment are needed in order to wrap this class
+  // in absl::StatusOr
+  CredentialSlab(CredentialSlab &&other) noexcept;
+  CredentialSlab &operator=(CredentialSlab &&other) noexcept;
+
+  // The destructor for a CredentialSlab, this will be called when a
+  // CredentialSlab instance goes out of scope and will free the underlying
+  // resources
+  ~CredentialSlab();
+
+  // Creates a new instance of a CredentialSlab, returns the CredentialSlab on
+  // success or a Status code on failure
+  [[nodiscard]] static absl::StatusOr<CredentialSlab> TryCreate();
+private:
+  friend class CredentialBook;
+  explicit CredentialSlab(np_ffi::internal::CredentialSlab credential_slab)
+      : credential_slab_(credential_slab), moved_(false) {}
+
+  np_ffi::internal::CredentialSlab credential_slab_;
+  bool moved_;
 };
 
 // Holds the credentials used when decrypting data of an advertisement.
@@ -148,9 +185,11 @@ public:
   // resources
   ~CredentialBook();
 
-  // Creates a new instance of a CredentialBook, returns the CredentialBook on
-  // success or a Status code on failure
-  [[nodiscard]] static absl::StatusOr<CredentialBook> TryCreate();
+  // Creates a new instance of a CredentialBook from a CredentialSlab,
+  // returning the CredentialBook on success or a Status code on failure.
+  // The passed credential-slab will be deallocated if this operation
+  // is successful.
+  [[nodiscard]] static absl::StatusOr<CredentialBook> TryCreateFromSlab(CredentialSlab &slab);
 
 private:
   friend class Deserializer;
@@ -339,8 +378,9 @@ public:
   // and will free the underlying parent handle.
   ~LegibleDeserializedV0Advertisement();
 
-  // Returns just the identity information associated with the advertisement
-  [[nodiscard]] DeserializedV0Identity GetIdentity();
+  // Returns just the kind of identity (public/encrypted)
+  // associated with the advertisement
+  [[nodiscard]] DeserializedV0IdentityKind GetIdentityKind();
   // Returns the number of data elements in the advertisement
   [[nodiscard]] uint8_t GetNumberOfDataElements();
   // Returns just the data-element payload of the advertisement
@@ -356,20 +396,6 @@ private:
   np_ffi::internal::LegibleDeserializedV0Advertisement
       legible_v0_advertisement_;
   bool moved_;
-};
-
-// A V0 identity of an advertisement
-class DeserializedV0Identity {
-public:
-  // Returns the DeserializedV0IdentityKind of the advertisement
-  [[nodiscard]] DeserializedV0IdentityKind GetKind();
-
-private:
-  friend class LegibleDeserializedV0Advertisement;
-  explicit DeserializedV0Identity(
-      np_ffi::internal::DeserializedV0Identity v0_identity)
-      : v0_identity_(v0_identity) {}
-  np_ffi::internal::DeserializedV0Identity v0_identity_;
 };
 
 // A data element payload of a Deserialized V0 Advertisement.

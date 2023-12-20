@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{run_cmd_shell_with_color, YellowStderr};
+use cmd_runner::{run_cmd_shell_with_color, YellowStderr};
 use std::{fs, path};
 
 pub(crate) fn run_rust_fuzzers(root: &path::Path) -> anyhow::Result<()> {

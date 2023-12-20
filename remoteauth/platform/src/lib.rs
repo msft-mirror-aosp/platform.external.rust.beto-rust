@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # RemoteAuthPlatform
-//!
-//! This trait represents the capabilities that RemoteAuth requires from the platform.
+pub mod listeners;
 
-use async_trait::async_trait;
+use crate::listeners::SendRequestListener;
 
-#[async_trait]
+/// # RemoteAuth Platform
+/// This trait represents the capabilities that RemoteAuth requires from the platform.
 pub trait Platform {
     /// Send a binary message to the remote with the given connection id and return the response.
-    async fn send_request(&self, connection_id: i32, request: &[u8]) -> anyhow::Result<Vec<u8>>;
+    fn send_request(
+        &self,
+        connection_id: i32,
+        request: &[u8],
+        listener: Box<dyn SendRequestListener + Send>,
+    );
 }

@@ -56,8 +56,8 @@ impl DeLength {
     /// A convenient constant for zero length.
     pub const ZERO: DeLength = DeLength { len: 0 };
 
-    fn as_usize(&self) -> usize {
-        self.len as usize
+    fn as_u8(&self) -> u8 {
+        self.len
     }
 }
 
@@ -65,7 +65,7 @@ impl TryFrom<u8> for DeLength {
     type Error = DeLengthOutOfRange;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        if value as usize <= MAX_DE_LEN {
+        if usize::from(value) <= MAX_DE_LEN {
             Ok(Self { len: value })
         } else {
             Err(DeLengthOutOfRange {})
