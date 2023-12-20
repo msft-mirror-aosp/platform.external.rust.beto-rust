@@ -16,7 +16,8 @@
 //! after the included context bytes, and utilities for
 //! performing signatures and signature verification.
 
-use crate::extended::{deserialize::EncryptionInfo, METADATA_KEY_LEN};
+use crate::extended::deserialize::EncryptionInfo;
+use crate::MetadataKey;
 use crate::NP_SVC_UUID;
 use crypto_provider::{aes::ctr::AesCtrNonce, CryptoProvider};
 use sink::{Sink, SinkWriter};
@@ -48,7 +49,7 @@ enum AfterIVInfo<'a> {
     /// Plaintext identity DE header followed by the metadata key,
     /// then the rest of the section plaintext (including
     /// the plaintext identity DE payload).
-    IdentityHeaderMetadataKeyAndRemainder([u8; 2], [u8; METADATA_KEY_LEN], &'a [u8]),
+    IdentityHeaderMetadataKeyAndRemainder([u8; 2], MetadataKey, &'a [u8]),
 }
 
 const ADV_SIGNATURE_CONTEXT: np_ed25519::SignatureContext = {
@@ -67,7 +68,7 @@ impl<'a> SectionSignaturePayload<'a> {
         encryption_info: &'a [u8; EncryptionInfo::TOTAL_DE_LEN],
         nonce_ref: &'a AesCtrNonce,
         identity_header: [u8; 2],
-        plaintext_metadata_key: [u8; METADATA_KEY_LEN],
+        plaintext_metadata_key: MetadataKey,
         raw_plaintext_remainder: &'a [u8],
     ) -> Self {
         Self {
@@ -141,7 +142,7 @@ impl<'a> SinkWriter for SectionSignaturePayload<'a> {
                 remainder,
             ) => {
                 sink.try_extend_from_slice(&identity_header)?;
-                sink.try_extend_from_slice(&metadata_key)?;
+                sink.try_extend_from_slice(&metadata_key.0)?;
                 sink.try_extend_from_slice(remainder)
             }
         }

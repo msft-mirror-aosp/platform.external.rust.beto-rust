@@ -70,9 +70,10 @@ TEST(ByteBufferTests, ByteBufferEndToEndPayloadAsString) {
 
   nearby_protocol::RawAdvertisementPayload adv(buffer.value());
 
-  auto credential_book = nearby_protocol::CredentialBook::TryCreate();
+  auto credential_slab = nearby_protocol::CredentialSlab::TryCreate().value();
+  auto credential_book = nearby_protocol::CredentialBook::TryCreateFromSlab(credential_slab).value();
   auto str = nearby_protocol::Deserializer::DeserializeAdvertisement(
-                 adv, credential_book.value())
+                 adv, credential_book)
                  .IntoV1()
                  .TryGetSection(0)
                  .value()
