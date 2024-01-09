@@ -39,7 +39,6 @@ test_helper = { path = "../test_helper" }
 criterion.workspace = true
 crypto_provider_default = { workspace = true, features = ["std", "rustcrypto"] }
 np_ed25519 = { workspace = true, features = ["std"] }
-rmp-serde = "1.1.2"
 sink = { workspace = true, features = ["std"] }
 
 [[bench]]

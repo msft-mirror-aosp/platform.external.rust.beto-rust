@@ -90,13 +90,13 @@ struct IdentityMetadata {
 }
 
 impl IdentityMetadata {
-    /// Serialize this identity metadata to a MsgPack byte-string.
+    /// Serialize this identity metadata to a json byte-string.
     fn to_bytes(&self) -> Vec<u8> {
-        rmp_serde::to_vec(&self).expect("serialization should always succeed")
+        serde_json::to_vec(self).expect("Identity metadata serialization is infallible")
     }
-    /// Attempt to deserialize identity metadata from a MsgPack byte-string.
+    /// Attempt to deserialize identity metadata from a json byte-string.
     fn try_from_bytes(serialized: &[u8]) -> Option<Self> {
-        rmp_serde::from_slice(serialized).ok()
+        serde_json::from_slice(serialized).ok()
     }
 }
 
