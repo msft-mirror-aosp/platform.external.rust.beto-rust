@@ -37,7 +37,7 @@ TEST_F(NpCppTest, TestSetMaxCredBooks) {
   ASSERT_TRUE(absl::IsResourceExhausted(book3_result.status()));
 }
 
-TEST_F(NpCppTest, TestMoveConstructor) {
+TEST_F(NpCppTest, TestBookMoveConstructor) {
   auto slab = nearby_protocol::CredentialSlab::TryCreate().value();
   auto book = nearby_protocol::CredentialBook::TryCreateFromSlab(slab).value();
   auto deserialize_result =
@@ -69,7 +69,7 @@ TEST_F(NpCppTest, TestMoveConstructor) {
                "");
 }
 
-TEST_F(NpCppTest, TestMoveAssignment) {
+TEST_F(NpCppTest, TestBookMoveAssignment) {
   auto slab = nearby_protocol::CredentialSlab::TryCreate().value();
   auto book = nearby_protocol::CredentialBook::TryCreateFromSlab(slab).value();
   auto deserialize_result =
