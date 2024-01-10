@@ -28,3 +28,9 @@ pub fn run_kotlin_tests(root: &path::Path) -> anyhow::Result<()> {
     run_cmd_shell(&kotlin_lib_path, "./gradlew :test")?;
     Ok(())
 }
+
+pub fn run_ukey2_jni_tests(root: &path::Path) -> anyhow::Result<()> {
+    let ukey2_jni_path = root.to_path_buf().join("connections/ukey2/ukey2_jni/java");
+    run_cmd_shell(&ukey2_jni_path, "./gradlew :test")?;
+    Ok(())
+}

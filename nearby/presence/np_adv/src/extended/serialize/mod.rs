@@ -161,6 +161,12 @@ pub struct AdvBuilder {
     advertisement_type: AdvertisementType,
 }
 
+impl AsMut<AdvBuilder> for AdvBuilder {
+    fn as_mut(&mut self) -> &mut AdvBuilder {
+        self
+    }
+}
+
 impl AdvBuilder {
     /// Build an [AdvBuilder].
     pub fn new(advertisement_type: AdvertisementType) -> Self {
@@ -170,17 +176,10 @@ impl AdvBuilder {
         Self { adv, section_count: 0, advertisement_type }
     }
 
-    /// Create a section builder.
-    ///
-    /// The builder will not accept more DEs than can fit given the space already used in the
-    /// advertisement by previous sections, if any.
-    ///
-    /// Once the builder is populated, add it to the originating advertisement with
-    /// [SectionBuilder.add_to_advertisement].
-    pub fn section_builder<SE: SectionEncoder>(
-        &mut self,
-        section_encoder: SE,
-    ) -> Result<SectionBuilder<SE>, AddSectionError> {
+    fn prepare_section_builder_buffer_and_de_offset<SE: SectionEncoder>(
+        &self,
+    ) -> Result<(CapacityLimitedVec<u8, NP_ADV_MAX_SECTION_LEN>, DataElementOffset), AddSectionError>
+    {
         // section header and identity prefix
         let prefix_len = 1 + SE::PREFIX_LEN;
         let minimum_section_len = prefix_len + SE::SUFFIX_LEN;
@@ -203,21 +202,60 @@ impl AdvBuilder {
         // placeholder for section header and identity prefix
         section.resize(prefix_len, 0);
 
-        Ok(SectionBuilder {
-            section: CapacityLimitedVec {
-                vec: section,
-                // won't underflow: checked above
-                capacity: available_len - SE::SUFFIX_LEN,
-            },
-            section_encoder,
-            adv_builder: self,
-            next_de_offset: SE::INITIAL_DE_OFFSET,
-        })
+        let section = CapacityLimitedVec {
+            vec: section,
+            // won't underflow: checked above
+            capacity: available_len - SE::SUFFIX_LEN,
+        };
+        let next_de_offset = SE::INITIAL_DE_OFFSET;
+        Ok((section, next_de_offset))
+    }
+
+    /// Create a section builder whose contents may be added to this advertisement.
+    ///
+    /// The builder will not accept more DEs than can fit given the space already used in the
+    /// advertisement by previous sections, if any.
+    ///
+    /// Once the builder is populated, add it to the originating advertisement with
+    /// [SectionBuilder.add_to_advertisement].
+    pub fn section_builder<SE: SectionEncoder>(
+        &mut self,
+        section_encoder: SE,
+    ) -> Result<SectionBuilder<&mut AdvBuilder, SE>, AddSectionError> {
+        let (section, next_de_offset) =
+            self.prepare_section_builder_buffer_and_de_offset::<SE>()?;
+
+        Ok(SectionBuilder { section, section_encoder, adv_builder: self, next_de_offset })
+    }
+
+    /// Create a section builder which actually takes ownership of this advertisement builder.
+    ///
+    /// This is unlike `AdvertisementBuilder#section_builder` in that the returned section
+    /// builder will take ownership of this advertisement builder, if the operation was
+    /// successful. Otherwise, this advertisement builder will be returned back to the
+    /// caller unaltered as part of the `Err` arm.
+    #[allow(clippy::result_large_err)]
+    pub fn into_section_builder<SE: SectionEncoder>(
+        self,
+        section_encoder: SE,
+    ) -> Result<SectionBuilder<AdvBuilder, SE>, (AdvBuilder, AddSectionError)> {
+        match self.prepare_section_builder_buffer_and_de_offset::<SE>() {
+            Ok((section, next_de_offset)) => {
+                Ok(SectionBuilder { section, section_encoder, adv_builder: self, next_de_offset })
+            }
+            Err(err) => Err((self, err)),
+        }
     }
 
     /// Convert the builder into an encoded advertisement.
     pub fn into_advertisement(self) -> EncodedAdvertisement {
         EncodedAdvertisement { adv: to_array_view(self.adv) }
+    }
+
+    /// Gets the current number of sections added to this advertisement
+    /// builder, not counting any outstanding SectionBuilders.
+    pub fn section_count(&self) -> usize {
+        self.section_count
     }
 
     /// Add the section, which must have come from a SectionBuilder generated from this, into this
@@ -279,24 +317,56 @@ type EncodedSection = ArrayView<u8, NP_ADV_MAX_SECTION_LEN>;
 
 /// Accumulates data elements and encodes them into a section.
 #[derive(Debug)]
-pub struct SectionBuilder<'a, SE: SectionEncoder> {
+pub struct SectionBuilder<R: AsMut<AdvBuilder>, SE: SectionEncoder> {
     /// Contains the section header, the identity-specified overhead, and any DEs added
     pub(crate) section: CapacityLimitedVec<u8, NP_ADV_MAX_SECTION_LEN>,
     section_encoder: SE,
-    /// mut ref to enforce only one active section builder at a time
-    adv_builder: &'a mut AdvBuilder,
+    /// mut ref-able to enforce only one active section builder at a time
+    adv_builder: R,
     next_de_offset: DataElementOffset,
 }
 
-impl<'a, SE: SectionEncoder> SectionBuilder<'a, SE> {
+impl<'a, SE: SectionEncoder> SectionBuilder<&'a mut AdvBuilder, SE> {
     /// Add this builder to the advertisement that created it.
     pub fn add_to_advertisement(self) {
-        let adv_builder = self.adv_builder;
+        let _ = self.add_to_advertisement_internal();
+    }
+}
+
+impl<SE: SectionEncoder> SectionBuilder<AdvBuilder, SE> {
+    /// Gets the 0-based index of the section currently under construction
+    /// in the context of the containing advertisement.
+    pub fn section_index(&self) -> usize {
+        self.adv_builder.section_count()
+    }
+    /// Add this builder to the advertisement that created it,
+    /// and returns the containing advertisement back to the caller.
+    pub fn add_to_advertisement(self) -> AdvBuilder {
+        self.add_to_advertisement_internal()
+    }
+}
+
+impl<R: AsMut<AdvBuilder>, SE: SectionEncoder> SectionBuilder<R, SE> {
+    /// Add this builder to the advertisement that created it.
+    /// Returns the mut-refable to the advertisement builder
+    /// which the contents of this section builder were added to.
+    fn add_to_advertisement_internal(mut self) -> R {
+        let adv_builder = self.adv_builder.as_mut();
+        let adv_builder_header_byte = adv_builder.header_byte();
         adv_builder.add_section(Self::build_section(
+            adv_builder_header_byte,
             self.section.into_inner(),
             self.section_encoder,
-            adv_builder,
-        ))
+        ));
+        self.adv_builder
+    }
+
+    /// Gets the derived salt which will be employed for the next DE offset.
+    ///
+    /// Suitable for scenarios (like FFI) where a closure would be inappropriate
+    /// for DE construction, and interaction with the client is preferred.
+    pub fn next_de_salt(&self) -> SE::DerivedSalt {
+        self.section_encoder.de_salt(self.next_de_offset)
     }
 
     /// Add a data element to the section with a closure that returns a `Result`.
@@ -306,8 +376,7 @@ impl<'a, SE: SectionEncoder> SectionBuilder<'a, SE> {
         &mut self,
         build_de: F,
     ) -> Result<(), AddDataElementError<E>> {
-        let writer = build_de(self.section_encoder.de_salt(self.next_de_offset))
-            .map_err(AddDataElementError::BuildDeError)?;
+        let writer = build_de(self.next_de_salt()).map_err(AddDataElementError::BuildDeError)?;
 
         let orig_len = self.section.len();
         // since we own the writer, and it's immutable, no race risk writing header w/ len then
@@ -357,9 +426,9 @@ impl<'a, SE: SectionEncoder> SectionBuilder<'a, SE> {
     ///
     /// Implemented without self to avoid partial-move issues.
     fn build_section(
+        adv_builder_header_byte: u8,
         mut section_contents: tinyvec::ArrayVec<[u8; NP_ADV_MAX_SECTION_LEN]>,
         mut section_encoder: SE,
-        adv_builder: &AdvBuilder,
     ) -> EncodedSection {
         // there is space because the capacity for DEs was restricted to allow it
         section_contents.resize(section_contents.len() + SE::SUFFIX_LEN, 0);
@@ -372,7 +441,7 @@ impl<'a, SE: SectionEncoder> SectionBuilder<'a, SE> {
             .expect("section length is always <=255 and non-negative");
 
         section_encoder.postprocess(
-            adv_builder.header_byte(),
+            adv_builder_header_byte,
             section_contents[0],
             &mut section_contents[1..],
         );

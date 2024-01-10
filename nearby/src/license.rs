@@ -108,5 +108,6 @@ fn license_ignore_dirs() -> Vec<&'static str> {
         "**/.editorconfig",
         "**/*.class",
         "**/fuzz/artifacts/**",
+        "**/cmake-build-debug/**",
     ]
 }

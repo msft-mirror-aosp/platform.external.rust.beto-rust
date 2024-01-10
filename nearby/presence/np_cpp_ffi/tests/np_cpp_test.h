@@ -18,7 +18,7 @@
 #include "nearby_protocol.h"
 #include "shared_test_util.h"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 class NpCppTest : public testing::Test {
 protected:

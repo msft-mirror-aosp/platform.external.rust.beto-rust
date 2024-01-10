@@ -87,6 +87,17 @@ enum class DeallocateResult {
   Success = 1,
 };
 
+/// Discriminant for `DecryptMetadataResult`.
+enum class DecryptMetadataResultKind : uint8_t {
+  /// The attempt to decrypt the metadata of the associated credential succeeded
+  /// The associated payload may be obtained via
+  /// `DecryptMetadataResult#into_success`.
+  Success,
+  /// The attempt to decrypt the metadata failed, either the payload had no matching identity
+  /// ie it was a public advertisement OR the decrypt attempt itself was unsuccessful
+  Error,
+};
+
 /// Discriminant for `DeserializeAdvertisementResult`.
 enum class DeserializeAdvertisementResultKind : uint8_t {
   /// Deserializing the advertisement failed, for some reason or another.
@@ -132,6 +143,24 @@ enum class DeserializedV1IdentityKind : uint8_t {
   Decrypted = 1,
 };
 
+/// The DE type for an encrypted identity
+enum class EncryptedIdentityType : uint8_t {
+  /// Identity for broadcasts to nearby devices with the same
+  /// logged-in-account (for some account).
+  Private = 1,
+  /// Identity for broadcasts to nearby devices which this
+  /// device has declared to trust.
+  Trusted = 2,
+  /// Identity for broadcasts to devices which have been provisioned
+  /// offline with this device.
+  Provisioned = 4,
+};
+
+enum class GetMetadataBufferPartsResultKind : uint8_t {
+  Success = 0,
+  Error = 1,
+};
+
 /// Discriminant of `GetV0DEResult`.
 enum class GetV0DEResultKind : uint8_t {
   /// The attempt to get the DE succeeded.
@@ -145,6 +174,33 @@ enum class GetV0DEResultKind : uint8_t {
   Error = 1,
 };
 
+/// Discriminant for `GetV0IdentityDetailsResult`
+enum class GetV0IdentityDetailsResultKind : uint8_t {
+  /// The attempt to get the identity details
+  /// for the advertisement failed, possibly
+  /// due to the advertisement being a public
+  /// advertisement, or the underlying
+  /// advertisement has already been deallocated.
+  Error = 0,
+  /// The attempt to get the identity details succeeded.
+  /// The wrapped identity details may be obtained via
+  /// `GetV0IdentityDetailsResult#into_success`.
+  Success = 1,
+};
+
+/// Discriminant for `GetV1DE16ByteSaltResult`.
+enum class GetV1DE16ByteSaltResultKind : uint8_t {
+  /// The attempt to get the derived salt failed, possibly
+  /// because the passed DE offset was invalid (==255),
+  /// or because there was no salt included for the
+  /// referenced advertisement section (i.e: it was
+  /// a public advertisement section, or it was deallocated.)
+  Error = 0,
+  /// A 16-byte salt for the given DE offset was successfully
+  /// derived.
+  Success = 1,
+};
+
 /// Discriminant for the `GetV1DEResult` enum.
 enum class GetV1DEResultKind : uint8_t {
   /// Attempting to get the DE at the given position failed,
@@ -153,6 +209,20 @@ enum class GetV1DEResultKind : uint8_t {
   Error = 0,
   /// Attempting to get the DE at the given position succeeded.
   /// The underlying DE may be extracted with `GetV1DEResult#into_success`.
+  Success = 1,
+};
+
+/// Discriminant for `GetV1IdentityDetailsResult`
+enum class GetV1IdentityDetailsResultKind : uint8_t {
+  /// The attempt to get the identity details
+  /// for the section failed, possibly
+  /// due to the section being a public
+  /// section, or the underlying
+  /// advertisement has already been deallocated.
+  Error = 0,
+  /// The attempt to get the identity details succeeded.
+  /// The wrapped identity details may be obtained via
+  /// `GetV1IdentityDetailsResult#into_success`.
   Success = 1,
 };
 
@@ -198,6 +268,16 @@ enum class V0DataElementKind : uint8_t {
   /// The associated payload may be obtained via
   /// `V0DataElement#into_actions`.
   Actions = 1,
+};
+
+/// Information about the verification scheme used
+/// for verifying the integrity of the contents
+/// of a decrypted section.
+enum class V1VerificationMode : uint8_t {
+  /// Message integrity code verification.
+  Mic = 0,
+  /// Signature verification.
+  Signature = 1,
 };
 
 ///A `#[repr(C)]` handle to a value of type `super::CredentialBookInternals`.
@@ -283,6 +363,50 @@ struct V1DiscoveryCredential {
 struct V1MatchableCredential {
   V1DiscoveryCredential discovery_cred;
   FfiMatchedCredential matched_cred;
+};
+
+///A `#[repr(C)]` handle to a value of type `super::DecryptedMetadataInternals`.
+struct DecryptedMetadata {
+  uint64_t handle_id;
+};
+
+/// The result of decrypting metadata from either a V0Payload or DeserializedV1Section
+struct DecryptMetadataResult {
+  enum class Tag {
+    Success,
+    Error,
+  };
+
+  struct Success_Body {
+    DecryptedMetadata _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// The pointer and length of the decrypted metadata byte buffer
+struct MetadataBufferParts {
+  const uint8_t *ptr;
+  uintptr_t len;
+};
+
+struct GetMetadataBufferPartsResult {
+  enum class Tag {
+    Success,
+    Error,
+  };
+
+  struct Success_Body {
+    MetadataBufferParts _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
 };
 
 ///A `#[repr(C)]` handle to a value of type `super::V0PayloadInternals`.
@@ -449,6 +573,39 @@ struct GetV0DEResult {
   };
 };
 
+/// Information about the identity which matched a
+/// decrypted V0 advertisement.
+struct DeserializedV0IdentityDetails {
+  /// The identity type (private/provisioned/trusted)
+  EncryptedIdentityType identity_type;
+  /// The ID of the credential which
+  /// matched the deserialized adv
+  uint32_t cred_id;
+  /// The 14-byte legacy metadata key
+  uint8_t metadata_key[14];
+  /// The 2-byte advertisement salt
+  uint8_t salt[2];
+};
+
+/// The result of attempting to get the identity details
+/// for a V0 advertisement via
+/// `DeserializedV0Advertisement#get_identity_details`.
+struct GetV0IdentityDetailsResult {
+  enum class Tag {
+    Error,
+    Success,
+  };
+
+  struct Success_Body {
+    DeserializedV0IdentityDetails _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
 /// Handle to a deserialized V1 section
 struct DeserializedV1Section {
   LegibleV1Sections legible_sections_handle;
@@ -523,6 +680,64 @@ struct GetV1DEResult {
 
   struct Success_Body {
     V1DataElement _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// Information about the identity which matched
+/// a decrypted V1 section.
+struct DeserializedV1IdentityDetails {
+  /// The identity type (private/provisioned/trusted)
+  EncryptedIdentityType identity_type;
+  /// The verification mode (MIC/Signature) which
+  /// was used to verify the decrypted adv contents.
+  V1VerificationMode verification_mode;
+  /// The ID of the credential which
+  /// matched the deserialized section.
+  uint32_t cred_id;
+  /// The 16-byte metadata key.
+  uint8_t metadata_key[16];
+};
+
+/// The result of attempting to get the identity details
+/// for a V1 advertisement section via
+/// `DeserializedV1Advertisement#get_identity_details`.
+struct GetV1IdentityDetailsResult {
+  enum class Tag {
+    Error,
+    Success,
+  };
+
+  struct Success_Body {
+    DeserializedV1IdentityDetails _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// A FFI safe wrapper of a fixed size array
+template<uintptr_t N>
+struct FixedSizeArray {
+  uint8_t _0[N];
+};
+
+/// The result of attempting to get a derived 16-byte salt
+/// for a given DE within a section.
+struct GetV1DE16ByteSaltResult {
+  enum class Tag {
+    Error,
+    Success,
+  };
+
+  struct Success_Body {
+    FixedSizeArray<16> _0;
   };
 
   Tag tag;
