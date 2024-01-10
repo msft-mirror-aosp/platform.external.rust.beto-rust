@@ -15,7 +15,6 @@
 #include "nearby_protocol.h"
 #include "shared_test_util.h"
 #include "np_cpp_test.h"
-
 #include "gtest/gtest.h"
 
 TEST_F(NpCppTest, InvalidCast) {

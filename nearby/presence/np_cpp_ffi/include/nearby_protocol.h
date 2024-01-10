@@ -19,6 +19,8 @@
 #include "absl/strings/str_format.h"
 #include "np_cpp_ffi_types.h"
 
+#include <span>
+
 // This namespace provides a C++ API surface to the Rust nearby protocol
 // implementation. This is a wrapper over the np_ffi::internal namespace defined
 // in the headers np_cpp_ffi_functions.h and np_cpp_ffi_types.h which are
@@ -50,25 +52,34 @@
 namespace nearby_protocol {
 
 // Re-exporting cbindgen generated types which are used in the public API
+using np_ffi::internal::AddCredentialToSlabResult;
 using np_ffi::internal::BooleanActionType;
-using np_ffi::internal::CreateCredentialSlabResultKind;
 using np_ffi::internal::CreateCredentialBookResultKind;
+using np_ffi::internal::CreateCredentialSlabResultKind;
 using np_ffi::internal::DeserializeAdvertisementResultKind;
 using np_ffi::internal::DeserializedV0AdvertisementKind;
+using np_ffi::internal::DeserializedV0IdentityDetails;
 using np_ffi::internal::DeserializedV0IdentityKind;
+using np_ffi::internal::DeserializedV1IdentityDetails;
 using np_ffi::internal::DeserializedV1IdentityKind;
+using np_ffi::internal::EncryptedIdentityType;
 using np_ffi::internal::GetV0DEResultKind;
 using np_ffi::internal::PanicReason;
 using np_ffi::internal::TxPower;
 using np_ffi::internal::V0DataElementKind;
+using np_ffi::internal::V1VerificationMode;
 
 template <uintptr_t N> using FfiByteBuffer = np_ffi::internal::ByteBuffer<N>;
 
 // All of the types defined in this header
 class RawAdvertisementPayload;
 class CredentialBook;
+class CredentialSlab;
 class Deserializer;
 class DeserializeAdvertisementResult;
+class MatchedCredentialData;
+class V0MatchableCredential;
+class V1MatchableCredential;
 
 // V0 Classes
 class DeserializedV0Advertisement;
@@ -156,6 +167,13 @@ public:
   // Creates a new instance of a CredentialSlab, returns the CredentialSlab on
   // success or a Status code on failure
   [[nodiscard]] static absl::StatusOr<CredentialSlab> TryCreate();
+
+  // Adds a V0 credential to the slab
+  [[nodiscard]] absl::Status AddV0Credential(V0MatchableCredential v0_cred);
+
+  // Adds a V1 credential to the slab
+  [[nodiscard]] absl::Status AddV1Credential(V1MatchableCredential v1_cred);
+
 private:
   friend class CredentialBook;
   explicit CredentialSlab(np_ffi::internal::CredentialSlab credential_slab)
@@ -189,7 +207,8 @@ public:
   // returning the CredentialBook on success or a Status code on failure.
   // The passed credential-slab will be deallocated if this operation
   // is successful.
-  [[nodiscard]] static absl::StatusOr<CredentialBook> TryCreateFromSlab(CredentialSlab &slab);
+  [[nodiscard]] static absl::StatusOr<CredentialBook>
+  TryCreateFromSlab(CredentialSlab &slab);
 
 private:
   friend class Deserializer;
@@ -198,6 +217,64 @@ private:
 
   np_ffi::internal::CredentialBook credential_book_;
   bool moved_;
+};
+
+// Holds data associated with a specific credential which will be returned to
+// the caller when it is successfully matched with an advertisement.
+class MatchedCredentialData {
+public:
+  // Creates matched credential data from a provided credential_id used to
+  // correlate the data back to its full credential data, and the metadata byte
+  // buffer as copied from the given span over bytes. After calling
+  // this the bytes are copied into the rust code, so the
+  // encrypted_metadata_bytes_buffer can be freed.
+  //
+  // Safety: this is safe if the span is over a valid buffer of bytes. The copy
+  // from the memory address isn't atomic, so concurrent modification of the
+  // array from another thread would cause undefined behavior.
+  [[nodiscard]] MatchedCredentialData(uint32_t cred_id,
+                                      std::span<uint8_t> metadata_bytes);
+
+private:
+  np_ffi::internal::FfiMatchedCredential data_;
+  friend class V0MatchableCredential;
+  friend class V1MatchableCredential;
+};
+
+// Holds the v0 credential data needed by the deserializer to decrypt
+// advertisements, along with some provided matched data that will be returned
+// back to the caller upon a successful credential match.
+class V0MatchableCredential {
+public:
+  // Creates a new V0MatchableCredential from a key seed, its calculated hmac
+  // value and some match data.
+  [[nodiscard]] V0MatchableCredential(
+      std::array<uint8_t, 32> key_seed,
+      std::array<uint8_t, 32> legacy_metadata_key_hmac,
+      MatchedCredentialData matched_credential_data);
+
+private:
+  friend class CredentialSlab;
+  np_ffi::internal::V0MatchableCredential internal_{};
+};
+
+// Holds the v1 credential data needed by the deserializer to decrypt
+// advertisements, along with some provided matched data that will be returned
+// back to the caller upon a successful credential match.
+class V1MatchableCredential {
+public:
+  // Creates a new V1MatchableCredential from key material, its calculated hmac
+  // value and some match data.
+  [[nodiscard]] V1MatchableCredential(
+      std::array<uint8_t, 32> key_seed,
+      std::array<uint8_t, 32> expected_unsigned_metadata_key_hmac,
+      std::array<uint8_t, 32> expected_signed_metadata_key_hmac,
+      std::array<uint8_t, 32> pub_key,
+      MatchedCredentialData matched_credential_data);
+
+private:
+  friend class CredentialSlab;
+  np_ffi::internal::V1MatchableCredential internal_;
 };
 
 // Representation of a buffer of bytes returned from deserialization APIs
@@ -417,6 +494,16 @@ public:
   // element if it exists otherwise returns an Error status code
   [[nodiscard]] absl::StatusOr<V0DataElement> TryGetDataElement(uint8_t index);
 
+  // Decrypts the metadata of the credential which matched with this
+  // advertisement, or returns an error if the metadata key is invalid and unable
+  // to successfully decrypt the metadata.
+  [[nodiscard]] absl::StatusOr<std::vector<uint8_t>> DecryptMetadata();
+
+  // Gets the details of the identity data element of this payload or returns an
+  // error if the payload does not have an identity (public advertisement)
+  [[nodiscard]] absl::StatusOr<DeserializedV0IdentityDetails>
+  GetIdentityDetails();
+
 private:
   friend class LegibleDeserializedV0Advertisement;
   explicit V0Payload(np_ffi::internal::V0Payload v0_payload)
@@ -506,10 +593,28 @@ class DeserializedV1Section {
 public:
   // Returns the number of data elements present in the section
   [[nodiscard]] uint8_t NumberOfDataElements();
+
   // Returns the DeserializedV1IdentityKind of the identity
   [[nodiscard]] DeserializedV1IdentityKind GetIdentityKind();
+
   // Tries to get the data element in the section at the given index
   [[nodiscard]] absl::StatusOr<V1DataElement> TryGetDataElement(uint8_t index);
+
+  // Decrypts the metadata of the credential which matched with this section
+  [[nodiscard]] absl::StatusOr<std::vector<uint8_t>> DecryptMetadata();
+
+  // Gets the details of the identity data element of this section or returns an
+  // error if the section does not conatin an identity (public section)
+  [[nodiscard]] absl::StatusOr<DeserializedV1IdentityDetails>
+  GetIdentityDetails();
+
+  // Attempts to derive a 16-byte DE salt for a DE in this section with the
+  // given DE offset. This operation may fail if the passed offset is 255
+  // (causes overflow) or if the section is leveraging a public identity, and
+  // hence, doesn't have an associated salt. The offset should come from a
+  // particular deserialized v1 de via `V1DataElement::GetOffset()`
+  [[nodiscard]] absl::StatusOr<std::array<uint8_t, 16>>
+  DeriveSaltForOffset(uint8_t offset);
 
 private:
   friend class DeserializedV1Advertisement;
@@ -531,6 +636,8 @@ public:
   [[nodiscard]] uint32_t GetDataElementTypeCode() const;
   // Yields the payload bytes of the data element
   [[nodiscard]] ByteBuffer<127> GetPayload() const;
+  /// Gets the offset for this V1 data element.
+  [[nodiscard]] uint8_t GetOffset() const;
 
 private:
   friend class DeserializedV1Section;

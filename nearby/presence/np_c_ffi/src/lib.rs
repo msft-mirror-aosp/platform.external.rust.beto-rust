@@ -87,8 +87,6 @@ impl PanicHandler {
     }
 }
 
-//TODO: use a std library RwLock if we have that available, spin is only needed for no_std and
-// won't be as performant
 static PANIC_HANDLER: RwLock<PanicHandler> = RwLock::new(PanicHandler::new());
 
 pub(crate) fn panic(reason: PanicReason) -> ! {
