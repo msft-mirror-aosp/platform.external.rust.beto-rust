@@ -805,7 +805,7 @@ fn do_signature_encrypted_identity_fixed_key_material_test<W: WriteDataElement>(
 /// Write `section_contents_len` bytes of DE and header into `section_builder`
 pub(crate) fn fill_section_builder<I: SectionEncoder>(
     section_contents_len: usize,
-    section_builder: &mut SectionBuilder<I>,
+    section_builder: &mut SectionBuilder<&mut AdvBuilder, I>,
 ) {
     // DEs can only go up to 127, so we'll need multiple for long sections
     for _ in 0..(section_contents_len / 100) {
@@ -863,9 +863,14 @@ pub(crate) trait SectionBuilderExt {
     fn into_section(self) -> EncodedSection;
 }
 
-impl<'a, I: SectionEncoder> SectionBuilderExt for SectionBuilder<'a, I> {
+impl<R: AsMut<AdvBuilder>, I: SectionEncoder> SectionBuilderExt for SectionBuilder<R, I> {
     /// Convenience method for tests
-    fn into_section(self) -> EncodedSection {
-        Self::build_section(self.section.into_inner(), self.section_encoder, self.adv_builder)
+    fn into_section(mut self) -> EncodedSection {
+        let adv_builder_header_byte = self.adv_builder.as_mut().header_byte();
+        Self::build_section(
+            adv_builder_header_byte,
+            self.section.into_inner(),
+            self.section_encoder,
+        )
     }
 }

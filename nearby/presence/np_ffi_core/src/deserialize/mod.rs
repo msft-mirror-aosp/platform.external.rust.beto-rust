@@ -19,7 +19,9 @@ use crate::deserialize::v0::*;
 use crate::deserialize::v1::*;
 use crate::utils::FfiEnum;
 use crypto_provider_default::CryptoProviderImpl;
-use handle_map::{HandleLike, HandleMapFullError, HandleNotPresentError};
+use handle_map::{
+    declare_handle_map, HandleLike, HandleMapDimensions, HandleMapFullError, HandleNotPresentError,
+};
 use np_adv::deserialization_arena;
 
 pub mod v0;
@@ -154,12 +156,131 @@ pub fn deserialize_advertisement(
     deserialize_advertisement_from_slice(adv_payload.as_slice(), credential_book)
 }
 
-/// Errors returned from [`crate::deserialize::v0::v0_payload::V0Payload#decrypt_metadata`].
-pub enum DecryptMetadataError {
+/// Errors returned from attempting to decrypt metadata
+pub(crate) enum DecryptMetadataError {
     /// The advertisement payload handle was either deallocated
     /// or corresponds to a public advertisement, and so we
     /// don't have any metadata to decrypt.
     EncryptedMetadataNotAvailable,
     /// Decryption of the raw metadata bytes failed.
     DecryptionFailed,
+}
+
+/// The result of decrypting metadata from either a V0Payload or DeserializedV1Section
+#[repr(C)]
+#[allow(missing_docs)]
+pub enum DecryptMetadataResult {
+    Success(DecryptedMetadata),
+    Error,
+}
+
+/// Discriminant for `DecryptMetadataResult`.
+#[repr(u8)]
+pub enum DecryptMetadataResultKind {
+    /// The attempt to decrypt the metadata of the associated credential succeeded
+    /// The associated payload may be obtained via
+    /// `DecryptMetadataResult#into_success`.
+    Success,
+    /// The attempt to decrypt the metadata failed, either the payload had no matching identity
+    /// ie it was a public advertisement OR the decrypt attempt itself was unsuccessful
+    Error,
+}
+
+impl FfiEnum for DecryptMetadataResult {
+    type Kind = DecryptMetadataResultKind;
+
+    fn kind(&self) -> Self::Kind {
+        match self {
+            DecryptMetadataResult::Success(_) => DecryptMetadataResultKind::Success,
+            DecryptMetadataResult::Error => DecryptMetadataResultKind::Error,
+        }
+    }
+}
+
+impl DecryptMetadataResult {
+    declare_enum_cast! {into_success, Success, DecryptedMetadata}
+}
+
+/// Internals of decrypted metadata
+pub struct DecryptedMetadataInternals {
+    decrypted_bytes: Box<[u8]>,
+}
+
+declare_handle_map! {
+    mod decrypted_metadata {
+        #[dimensions = super::get_decrypted_metadata_handle_map_dimensions()]
+        type DecryptedMetadata: HandleLike<Object = super::DecryptedMetadataInternals>;
+    }
+}
+use decrypted_metadata::DecryptedMetadata;
+
+fn get_decrypted_metadata_handle_map_dimensions() -> HandleMapDimensions {
+    HandleMapDimensions { num_shards: global_num_shards(), max_active_handles: DEFAULT_MAX_HANDLES }
+}
+
+/// The pointer and length of the decrypted metadata byte buffer
+#[repr(C)]
+pub struct MetadataBufferParts {
+    ptr: *const u8,
+    len: usize,
+}
+
+#[repr(C)]
+#[allow(missing_docs)]
+pub enum GetMetadataBufferPartsResult {
+    Success(MetadataBufferParts),
+    Error,
+}
+
+impl GetMetadataBufferPartsResult {
+    declare_enum_cast! {into_success, Success, MetadataBufferParts}
+}
+
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum GetMetadataBufferPartsResultKind {
+    Success = 0,
+    Error = 1,
+}
+
+impl FfiEnum for GetMetadataBufferPartsResult {
+    type Kind = GetMetadataBufferPartsResultKind;
+
+    fn kind(&self) -> Self::Kind {
+        match self {
+            GetMetadataBufferPartsResult::Success(_) => GetMetadataBufferPartsResultKind::Success,
+            GetMetadataBufferPartsResult::Error => GetMetadataBufferPartsResultKind::Error,
+        }
+    }
+}
+
+fn allocate_decrypted_metadata_handle(metadata: Vec<u8>) -> DecryptMetadataResult {
+    let allocate_result = DecryptedMetadata::allocate(move || DecryptedMetadataInternals {
+        decrypted_bytes: metadata.into_boxed_slice(),
+    });
+    match allocate_result {
+        Ok(decrypted) => DecryptMetadataResult::Success(decrypted),
+        Err(_) => DecryptMetadataResult::Error,
+    }
+}
+
+impl DecryptedMetadata {
+    /// Gets the raw parts, pointer + length representation of the metadata byte buffer
+    pub fn get_metadata_buffer_parts(&self) -> GetMetadataBufferPartsResult {
+        match self.get() {
+            Ok(metadata_internals) => {
+                let result = MetadataBufferParts {
+                    ptr: metadata_internals.decrypted_bytes.as_ptr(),
+                    len: metadata_internals.decrypted_bytes.len(),
+                };
+                GetMetadataBufferPartsResult::Success(result)
+            }
+            Err(_) => GetMetadataBufferPartsResult::Error,
+        }
+    }
+
+    /// Frees the underlying decrypted metadata buffer
+    pub fn deallocate_metadata(&self) -> DeallocateResult {
+        self.deallocate().map(|_| ()).into()
+    }
 }

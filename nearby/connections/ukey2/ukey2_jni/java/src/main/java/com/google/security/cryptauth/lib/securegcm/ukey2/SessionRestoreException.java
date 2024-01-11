@@ -12,21 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.google.security.cryptauth.lib.securegcm;
+package com.google.security.cryptauth.lib.securegcm.ukey2;
 
-/**
- * Represents an unrecoverable error that has occurred during the handshake procedure.
- */
-public class HandshakeException extends Exception {
-    public HandshakeException(String message) {
-        super(message);
-    }
+/** Represents an unrecoverable error that has occurred during the handshake procedure. */
+public class SessionRestoreException extends Exception {
+  public SessionRestoreException(String message) {
+    super(message);
+  }
 
-    public HandshakeException(Exception e) {
-        super(e);
-    }
+  public SessionRestoreException(Exception e) {
+    super(e);
+  }
 
-    public HandshakeException(String message, Exception e) {
-        super(message, e);
-    }
+  public SessionRestoreException(String message, Exception e) {
+    super(message, e);
+  }
 }
