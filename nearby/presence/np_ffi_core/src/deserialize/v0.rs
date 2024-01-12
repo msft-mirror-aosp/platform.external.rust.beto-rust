@@ -16,7 +16,9 @@
 use crate::common::*;
 use crate::credentials::credential_book::CredentialBook;
 use crate::credentials::MatchedCredential;
-use crate::deserialize::DecryptMetadataError;
+use crate::deserialize::{
+    allocate_decrypted_metadata_handle, DecryptMetadataError, DecryptMetadataResult,
+};
 use crate::utils::{FfiEnum, LocksLongerThan};
 use crypto_provider_default::CryptoProviderImpl;
 use handle_map::{declare_handle_map, HandleLike, HandleMapDimensions, HandleMapFullError};
@@ -399,7 +401,7 @@ impl V0Payload {
     }
 
     /// Gets the identity details for this V0 payload,
-    /// if this payload was associted with an identity
+    /// if this payload was associated with an identity
     /// (i.e: non-public advertisements).
     pub fn get_identity_details(&self) -> GetV0IdentityDetailsResult {
         match self.get() {
@@ -410,17 +412,13 @@ impl V0Payload {
 
     /// Attempts to decrypt the metadata for the matched
     /// credential for this V0 payload (if any)
-    ///
-    /// Note that while this method is publicly exposed
-    /// from `np_ffi_core`, since it involves the (FFI-layer-unexpressed)
-    /// type `Vec<u8>`, a direct wrapper will not suffice,
-    /// and instead a language-specific binding will need to
-    /// be generated for this method which respects the
-    /// expected memory-management semantics of the target language.
-    pub fn decrypt_metadata(&self) -> Result<Vec<u8>, DecryptMetadataError> {
+    pub fn decrypt_metadata(&self) -> DecryptMetadataResult {
         match self.get() {
-            Ok(read_guard) => read_guard.decrypt_metadata(),
-            Err(_) => Err(DecryptMetadataError::EncryptedMetadataNotAvailable),
+            Ok(read_guard) => match read_guard.decrypt_metadata() {
+                Ok(decrypted_metadata) => allocate_decrypted_metadata_handle(decrypted_metadata),
+                Err(_) => DecryptMetadataResult::Error,
+            },
+            Err(_) => DecryptMetadataResult::Error,
         }
     }
 

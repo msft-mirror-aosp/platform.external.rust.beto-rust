@@ -81,10 +81,8 @@ int main() {
   auto v1_byte_string = "20"     // V1 Advertisement header
                         "04"     // Section Header
                         "03"     // Public Identity DE header
-                        "260046" // Length 2 Actions DE
-                        "03"     // Section Header
-                        "03"     // Public Identity DE header
-                        "1505";  // Length 1 Tx Power DE with value 5
+                        "260046";// Length 2 Actions DE
+
   auto v1_bytes = absl::HexStringToBytes(v1_byte_string);
   auto v1_buffer = nearby_protocol::ByteBuffer<255>::CopyFrom(v1_bytes);
   nearby_protocol::RawAdvertisementPayload v1_payload(v1_buffer.value());

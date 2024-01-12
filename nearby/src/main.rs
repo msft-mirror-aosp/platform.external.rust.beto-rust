@@ -54,6 +54,7 @@ fn main() -> anyhow::Result<()> {
         Subcommand::AddLicenseHeaders => license::add_license_headers(&root_dir)?,
         Subcommand::CheckLdtFfi => ffi::check_ldt_ffi_rust(&root_dir)?,
         Subcommand::CheckUkey2Ffi(ref options) => ukey2::check_ukey2_ffi(&root_dir, options)?,
+        Subcommand::RunUkey2JniTests => jni::run_ukey2_jni_tests(&root_dir)?,
         Subcommand::CheckLdtJni => jni::check_ldt_jni(&root_dir)?,
         Subcommand::CheckNpFfi(ref options) => ffi::check_np_ffi_rust(&root_dir, options)?,
         Subcommand::CheckLdtCmake(ref options) => ffi::check_ldt_cmake(&root_dir, options)?,
@@ -106,6 +107,7 @@ pub fn check_everything(root: &path::Path, check_options: &CheckOptions) -> anyh
     ffi::check_everything(root, &check_options.cargo_options)?;
     jni::check_ldt_jni(root)?;
     jni::run_kotlin_tests(root)?;
+    jni::run_ukey2_jni_tests(root)?;
     ukey2::check_ukey2_ffi(root, &check_options.cargo_options)?;
     fuzzers::run_rust_fuzzers(root)?;
     fuzzers::build_ffi_fuzzers(root)?;
@@ -177,6 +179,8 @@ enum Subcommand {
     CheckLdtJni,
     /// Runs the kotlin tests of the LDT Jni API
     RunKotlinTests,
+    /// Checks the build of the ukey2_jni wrapper and runs tests
+    RunUkey2JniTests,
 }
 
 #[derive(clap::Args, Debug, Clone, Default)]

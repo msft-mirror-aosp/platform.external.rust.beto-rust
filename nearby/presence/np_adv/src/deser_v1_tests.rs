@@ -519,7 +519,7 @@ impl<C: CryptoProvider> TestIdentity<C> {
 }
 /// Add several DEs with random types and contents
 fn add_des<I: SectionEncoder, R: rand::Rng>(
-    mut sb: SectionBuilder<I>,
+    mut sb: SectionBuilder<&mut AdvBuilder, I>,
     rng: &mut R,
 ) -> Vec<GenericDataElement> {
     let mut des = Vec::new();

@@ -178,6 +178,30 @@ AddCredentialToSlabResult np_ffi_CredentialSlab_add_v0_credential(CredentialSlab
 AddCredentialToSlabResult np_ffi_CredentialSlab_add_v1_credential(CredentialSlab credential_slab,
                                                                   V1MatchableCredential v1_cred);
 
+/// Frees the underlying resources of the decrypted metadata buffer
+DeallocateResult np_ffi_deallocate_DecryptedMetadata(DecryptedMetadata metadata);
+
+/// Gets the tag of a `DecryptMetadataResult` tagged-union. On success the wrapped identity
+/// details may be obtained via `DecryptMetadataResult#into_success`.
+DecryptMetadataResultKind np_ffi_DecryptMetadataResult_kind(DecryptMetadataResult result);
+
+/// Casts a `DecryptMetadataResult` to the `Success` variant, panicking in the
+/// case where the passed value is of a different enum variant.
+DecryptedMetadata np_ffi_DecryptMetadataResult_into_SUCCESS(DecryptMetadataResult result);
+
+/// Gets the pointer and length of the heap allocated byte buffer of decrypted metadata
+GetMetadataBufferPartsResult np_ffi_DecryptedMetadata_get_metadata_buffer_parts(DecryptedMetadata metadata);
+
+/// Gets the tag of a `GetMetadataBufferPartsResult` tagged-union. On success the wrapped identity
+/// details may be obtained via `GetMetadataBufferPartsResult#into_success`.
+GetMetadataBufferPartsResultKind np_ffi_GetMetadataBufferPartsResult_kind(GetMetadataBufferPartsResult result);
+
+/// Casts a `GetMetadataBufferPartsResult` to the `Success` variant, panicking in the
+/// case where the passed value is of a different enum variant. This returns the pointer and length
+/// of the byte buffer containing the decrypted metadata.  There can be a data-race between attempts
+/// to access the contents of the buffer and attempts to free the handle from different threads.
+MetadataBufferParts np_ffi_GetMetadataBufferPartsResult_into_SUCCESS(GetMetadataBufferPartsResult result);
+
 /// Attempts to deserialize an advertisement with the given service-data
 /// payload (presumed to be under the NP service UUID) using credentials
 /// pulled from the given credential-book.
@@ -228,6 +252,21 @@ DeallocateResult np_ffi_deallocate_legible_v0_advertisement(LegibleDeserializedV
 
 /// Attempts to get the data-element with the given index in the passed v0 adv payload
 GetV0DEResult np_ffi_V0Payload_get_de(V0Payload payload, uint8_t index);
+
+/// Attempts to decrypt the metadata for the matched credential for this V0 payload (if any)
+DecryptMetadataResult np_ffi_V0Payload_decrypt_metadata(V0Payload payload);
+
+/// Gets the identity details for this V0 payload, or returns an error if this payload does not have
+/// any associated identity (public advertisement)
+GetV0IdentityDetailsResult np_ffi_V0Payload_get_identity_details(V0Payload payload);
+
+/// Gets the tag of a `GetV0IdentityDetailsResult` tagged-union. On success the wrapped identity
+/// details may be obtained via `GetV0IdentityDetailsResult#into_success`.
+GetV0IdentityDetailsResultKind np_ffi_GetV0IdentityDetailsResult_kind(GetV0IdentityDetailsResult result);
+
+/// Casts a `GetV0IdentityDetailsResult` to the `Success` variant, panicking in the
+/// case where the passed value is of a different enum variant.
+DeserializedV0IdentityDetails np_ffi_GetV0IdentityDetailsResult_into_SUCCESS(GetV0IdentityDetailsResult result);
 
 /// Deallocates any internal data of a `V0Payload`
 DeallocateResult np_ffi_deallocate_v0_payload(V0Payload payload);
@@ -290,10 +329,39 @@ DeserializedV1IdentityKind np_ffi_DeserializedV1Section_get_identity_kind(Deseri
 /// Gets the data-element with the given index in the passed section.
 GetV1DEResult np_ffi_DeserializedV1Section_get_de(DeserializedV1Section section, uint8_t de_index);
 
+/// Gets the identity details used to decrypt this V1 section, or returns an error if this payload
+/// does not have any associated identity (public advertisement)
+GetV1IdentityDetailsResult np_ffi_DeserializedV1Section_get_identity_details(DeserializedV1Section section);
+
+/// Gets the tag of a `GetV1IdentityDetailsResult` tagged-union. On success the wrapped identity
+/// details may be obtained via `GetV0IdentityDetailsResult#into_success`.
+GetV1IdentityDetailsResultKind np_ffi_GetV1IdentityDetailsResult_kind(GetV1IdentityDetailsResult result);
+
+/// Casts a `GetV1IdentityDetailsResult` to the `Success` variant, panicking in the
+/// case where the passed value is of a different enum variant.
+DeserializedV1IdentityDetails np_ffi_GetV1IdentityDetailsResult_into_SUCCESS(GetV1IdentityDetailsResult result);
+
+/// Attempts to decrypt the metadata for the matched credential for this V0 payload (if any)
+DecryptMetadataResult np_ffi_DeserializedV1Section_decrypt_metadata(DeserializedV1Section section);
+
+/// Attempts to derive a 16-byte DE salt for a DE in this section with the given DE offset. This
+/// operation may fail if the passed offset is 255 (causes overflow) or if the section
+/// is leveraging a public identity, and hence, doesn't have an associated salt.
+GetV1DE16ByteSaltResult np_ffi_DeserializedV1Section_derive_16_byte_salt_for_offset(DeserializedV1Section section,
+                                                                                    uint8_t offset);
+
+/// Gets the tag of a `GetV1DE16ByteSaltResult` tagged-union. On success the wrapped identity
+/// details may be obtained via `GetV1DE16ByteSaltResult#into_success`.
+GetV1DE16ByteSaltResultKind np_ffi_GetV1DE16ByteSaltResult_kind(GetV1DE16ByteSaltResult result);
+
+/// Casts a `GetV1DE16ByteSaltResult` to the `Success` variant, panicking in the
+/// case where the passed value is of a different enum variant.
+FixedSizeArray<16> np_ffi_GetV1DE16ByteSaltResult_into_SUCCESS(GetV1DE16ByteSaltResult result);
+
 /// Gets the tag of the `GetV1DEResult` tagged-union.
 GetV1DEResultKind np_ffi_GetV1DEResult_kind(GetV1DEResult result);
 
-/// Casts a `GetV1DEResult` to the `Success` vartiant, panicking in the
+/// Casts a `GetV1DEResult` to the `Success` variant, panicking in the
 /// case where the passed value is of a different enum variant.
 V1DataElement np_ffi_GetV1DEResult_into_SUCCESS(GetV1DEResult result);
 
