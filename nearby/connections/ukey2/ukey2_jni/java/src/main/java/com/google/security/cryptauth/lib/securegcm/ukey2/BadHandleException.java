@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package com.google.security.cryptauth.lib.securegcm;
+package com.google.security.cryptauth.lib.securegcm.ukey2;
 
 /**
- * Represents an unrecoverable error that has occurred during the handshake procedure.
+ * Represents an unrecoverable error (invalid handle) that has occurred during the
+ * handshake/connection.
  */
-public class CryptoException extends Exception {
-  public CryptoException(String message) {
+public class BadHandleException extends Exception {
+  public BadHandleException(String message) {
     super(message);
   }
 
-  public CryptoException(Exception e) {
+  public BadHandleException(Exception e) {
     super(e);
   }
 
-  public CryptoException(String message, Exception e) {
+  public BadHandleException(String message, Exception e) {
     super(message, e);
   }
 }

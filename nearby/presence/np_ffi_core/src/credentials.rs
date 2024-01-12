@@ -380,3 +380,37 @@ pub fn deallocate_credential_book(credential_book: CredentialBook) -> Deallocate
 pub fn deallocate_credential_slab(credential_slab: CredentialSlab) -> DeallocateResult {
     credential_slab.deallocate().map(|_| ()).into()
 }
+
+/// Cryptographic information about a particular V1 broadcast credential
+/// necessary to encrypt V1 MIC-verified and signature-verified sections.
+#[repr(C)]
+pub struct V1BroadcastCredential {
+    key_seed: [u8; 32],
+    metadata_key: [u8; 16],
+    private_key: [u8; 32],
+}
+
+impl V1BroadcastCredential {
+    /// Constructs a new `V1BroadcastCredential` from the given
+    /// key-seed, 16-byte metadata key, and the raw bytes
+    /// of the ed25519 private key.
+    ///
+    /// Safety: Since this representation requires transmission
+    /// of the raw bytes of an ed25519 private key (and other
+    /// sensitive cryptographic info) over FFI, foreign-lang
+    /// code around how this information is maintained
+    /// deserves close scrutiny.
+    pub fn new(key_seed: [u8; 32], metadata_key: [u8; 16], private_key: [u8; 32]) -> Self {
+        Self { key_seed, metadata_key, private_key }
+    }
+    pub(crate) fn into_internal(
+        self,
+    ) -> np_adv::credential::v1::SimpleSignedBroadcastCryptoMaterial {
+        let permit = crypto_provider::ed25519::RawPrivateKeyPermit::default();
+        np_adv::credential::v1::SimpleSignedBroadcastCryptoMaterial::new(
+            self.key_seed,
+            np_adv::MetadataKey(self.metadata_key),
+            crypto_provider::ed25519::PrivateKey::from_raw_private_key(self.private_key, &permit),
+        )
+    }
+}
