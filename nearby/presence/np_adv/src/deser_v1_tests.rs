@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 use core::marker::PhantomData;
 use rand::{rngs::StdRng, seq::SliceRandom as _, Rng as _, SeedableRng as _};
 
@@ -19,12 +21,17 @@ extern crate std;
 
 use crate::{
     credential::{
-        simple::{SimpleMatchedCredential, SimpleV1Credential},
-        source::SliceCredentialSource,
-        v1::MinimumFootprintV1CryptoMaterial,
+        book::{CredentialBook, CredentialBookBuilder},
+        v1::{
+            SignedBroadcastCryptoMaterial, SimpleSignedBroadcastCryptoMaterial,
+            V1DiscoveryCredential,
+        },
+        EmptyMatchedCredential, MatchableCredential, MatchedCredential,
     },
     de_type::EncryptedIdentityDataElementType,
-    deserialize_v1_advertisement,
+    deserialization_arena,
+    deserialization_arena::DeserializationArena,
+    deserialize_advertisement,
     extended::{
         data_elements::GenericDataElement,
         deserialize::VerificationMode,
@@ -33,8 +40,8 @@ use crate::{
             PublicSectionEncoder, SectionBuilder, SectionEncoder, SignedEncryptedSectionEncoder,
         },
     },
-    AdvDeserializationError, AdvDeserializationErrorDetailsHazmat, CredentialSource,
-    PlaintextIdentityMode, Section, V1AdvContents, V1Credential, V1DeserializedSection,
+    AdvDeserializationError, AdvDeserializationErrorDetailsHazmat, HasIdentityMatch, MetadataKey,
+    PlaintextIdentityMode, Section, V1AdvertisementContents, V1DeserializedSection,
 };
 use crypto_provider::{CryptoProvider, CryptoRng};
 use std::{collections, prelude::rust_2021::*, vec};
@@ -55,11 +62,20 @@ fn v1_plaintext() {
         let section_configs: Vec<SectionConfig<CryptoProviderImpl>> =
             fill_plaintext_adv(&mut rng, &mut adv_builder);
         let adv = adv_builder.into_advertisement();
-        let creds = identities.iter().map(|i| i.credential()).collect::<Vec<_>>();
-        let cred_source = SliceCredentialSource::new(&creds);
+        let creds = identities
+            .iter()
+            .map(|i| MatchableCredential {
+                discovery_credential: i.discovery_credential(),
+                match_data: EmptyMatchedCredential,
+            })
+            .collect::<Vec<_>>();
+
+        let arena = deserialization_arena!();
         // check if the section is empty or there is more than one public section
+        let cred_book =
+            CredentialBookBuilder::build_cached_slice_book::<0, 0, CryptoProviderImpl>(&[], &creds);
         if section_configs.is_empty() {
-            let v1_error = deser_v1_error::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_error = deser_v1_error::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(
                 v1_error,
                 AdvDeserializationError::ParseError {
@@ -68,7 +84,7 @@ fn v1_plaintext() {
                 }
             ); //assert a adv deserialization error
         } else {
-            let v1_contents = deser_v1::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_contents = deser_v1::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(0, v1_contents.invalid_sections_count());
             assert_eq!(section_configs.len(), v1_contents.sections.len());
             for (section_config, section) in section_configs.iter().zip(v1_contents.sections.iter())
@@ -90,11 +106,19 @@ fn v1_all_identities_resolvable_ciphertext() {
         let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
         let section_configs = fill_encrypted_adv(&mut rng, &identities, &mut adv_builder);
         let adv = adv_builder.into_advertisement();
-        let creds = identities.iter().map(|i| i.credential()).collect::<Vec<_>>();
-        let cred_source = SliceCredentialSource::new(&creds);
+        let creds = identities
+            .iter()
+            .map(|i| MatchableCredential {
+                discovery_credential: i.discovery_credential(),
+                match_data: EmptyMatchedCredential,
+            })
+            .collect::<Vec<_>>();
+        let arena = deserialization_arena!();
         // check if the section header would be 0 or if the section is empty
+        let cred_book =
+            CredentialBookBuilder::build_cached_slice_book::<0, 0, CryptoProviderImpl>(&[], &creds);
         if section_configs.is_empty() {
-            let v1_error = deser_v1_error::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_error = deser_v1_error::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(
                 v1_error,
                 AdvDeserializationError::ParseError {
@@ -103,7 +127,7 @@ fn v1_all_identities_resolvable_ciphertext() {
                 }
             ); //assert a adv deserialization error
         } else {
-            let v1_contents = deser_v1::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_contents = deser_v1::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(0, v1_contents.invalid_sections_count());
             assert_eq!(section_configs.len(), v1_contents.sections.len());
             for (section_config, section) in section_configs.iter().zip(v1_contents.sections.iter())
@@ -133,12 +157,18 @@ fn v1_only_non_matching_identities_available_ciphertext() {
                     .iter()
                     .any(|sc| sc.identity.map(|sci| sci.key_seed == i.key_seed).unwrap_or(false))
             })
-            .map(|i| i.credential())
+            .map(|i| MatchableCredential {
+                discovery_credential: i.discovery_credential(),
+                match_data: EmptyMatchedCredential,
+            })
             .collect::<Vec<_>>();
-        let cred_source = SliceCredentialSource::new(&creds);
+
+        let arena = deserialization_arena!();
         // check if the section header would be 0
+        let cred_book =
+            CredentialBookBuilder::build_cached_slice_book::<0, 0, CryptoProviderImpl>(&[], &creds);
         if section_configs.is_empty() {
-            let v1_error = deser_v1_error::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_error = deser_v1_error::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(
                 v1_error,
                 AdvDeserializationError::ParseError {
@@ -147,7 +177,7 @@ fn v1_only_non_matching_identities_available_ciphertext() {
                 }
             ); //assert a adv deserialization error
         } else {
-            let v1_contents = deser_v1::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_contents = deser_v1::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             // all encrypted identity sections are invalid
             let encrypted_section_count =
                 section_configs.iter().filter(|sc| sc.identity.is_some()).count();
@@ -178,13 +208,15 @@ fn v1_no_creds_available_ciphertext() {
             &mut adv_builder,
         );
         let adv = adv_builder.into_advertisement();
-        let cred_source: SliceCredentialSource<
-            '_,
-            SimpleV1Credential<MinimumFootprintV1CryptoMaterial, [u8; 32]>,
-        > = SliceCredentialSource::new(&[]);
+        let arena = deserialization_arena!();
         // check if the section header would be 0
+        let cred_book = CredentialBookBuilder::<EmptyMatchedCredential>::build_cached_slice_book::<
+            0,
+            0,
+            CryptoProviderImpl,
+        >(&[], &[]);
         if section_configs.is_empty() {
-            let v1_error = deser_v1_error::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_error = deser_v1_error::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(
                 v1_error,
                 AdvDeserializationError::ParseError {
@@ -193,7 +225,7 @@ fn v1_no_creds_available_ciphertext() {
                 }
             ); //assert a adv deserialization error
         } else {
-            let v1_contents = deser_v1::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_contents = deser_v1::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             // all encrypted identity sections are invalid
             let encrypted_section_count =
                 section_configs.iter().filter(|sc| sc.identity.is_some()).count();
@@ -240,12 +272,20 @@ fn v1_only_some_matching_identities_available_ciphertext() {
         let creds = identities
             .iter()
             .filter(|i| !identities_to_remove.contains(&i.key_seed))
-            .map(|i| i.credential())
+            .map(|i| MatchableCredential {
+                discovery_credential: i.discovery_credential(),
+                match_data: EmptyMatchedCredential,
+            })
             .collect::<Vec<_>>();
-        let cred_source = SliceCredentialSource::new(&creds);
+
+        let arena = deserialization_arena!();
+
+        let cred_book =
+            CredentialBookBuilder::build_cached_slice_book::<0, 0, CryptoProviderImpl>(&[], &creds);
+
         // check if the section header would be 0
         if section_configs.is_empty() {
-            let v1_error = deser_v1_error::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_error = deser_v1_error::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
             assert_eq!(
                 v1_error,
                 AdvDeserializationError::ParseError {
@@ -254,7 +294,7 @@ fn v1_only_some_matching_identities_available_ciphertext() {
                 }
             ); //assert a adv deserialization error
         } else {
-            let v1_contents = deser_v1::<_, _, CryptoProviderImpl>(&cred_source, &adv);
+            let v1_contents = deser_v1::<_, CryptoProviderImpl>(arena, &adv, &cred_book);
 
             let affected_sections: Vec<_> = section_configs
                 .iter()
@@ -282,9 +322,9 @@ fn v1_only_some_matching_identities_available_ciphertext() {
     }
 }
 
-fn assert_section_equals<'m, C: CryptoProvider>(
+fn assert_section_equals<M: MatchedCredential, C: CryptoProvider>(
     section_config: &SectionConfig<C>,
-    section: &V1DeserializedSection<'m, SimpleMatchedCredential<'m, [u8; 32]>>,
+    section: &V1DeserializedSection<M>,
 ) {
     match section_config.identity {
         None => match section {
@@ -294,7 +334,7 @@ fn assert_section_equals<'m, C: CryptoProvider>(
                 assert_eq!(section_config.plaintext_mode.unwrap(), p.identity());
                 assert_eq!(
                     section_config.data_elements,
-                    p.data_elements().map(|de| de.into()).collect::<Vec<_>>()
+                    p.iter_data_elements().map(|de| (&de.unwrap()).into()).collect::<Vec<_>>()
                 )
             }
             V1DeserializedSection::Decrypted(_) => panic!("no id, but decrypted section"),
@@ -306,14 +346,17 @@ fn assert_section_equals<'m, C: CryptoProvider>(
 
                 assert_eq!(
                     section_config.data_elements,
-                    wmc.contents().data_elements().map(|de| de.into()).collect::<Vec<_>>()
+                    wmc.contents()
+                        .iter_data_elements()
+                        .map(|de| (&de.unwrap()).into())
+                        .collect::<Vec<GenericDataElement>>()
                 );
                 assert_eq!(
                     section_config.identity.unwrap().identity_type,
                     wmc.contents().identity_type()
                 );
                 assert_eq!(
-                    &section_config.identity.unwrap().extended_metadata_key,
+                    section_config.identity.unwrap().extended_metadata_key,
                     wmc.contents().metadata_key()
                 );
                 assert_eq!(
@@ -325,32 +368,35 @@ fn assert_section_equals<'m, C: CryptoProvider>(
     }
 }
 
-fn deser_v1_error<'s, C, S, P>(
-    cred_source: &'s S,
-    adv: &'s EncodedAdvertisement,
+fn deser_v1_error<'a, B, P>(
+    arena: DeserializationArena<'a>,
+    adv: &'a EncodedAdvertisement,
+    cred_book: &'a B,
 ) -> AdvDeserializationError
 where
-    C: V1Credential<Matched<'s> = SimpleMatchedCredential<'s, [u8; 32]>> + 's,
-    S: CredentialSource<C>,
+    B: CredentialBook<'a>,
     P: CryptoProvider,
 {
-    let v1_contents = match deserialize_v1_advertisement::<C, S, P>(adv.as_slice(), cred_source) {
+    let v1_contents = match deserialize_advertisement::<_, P>(arena, adv.as_slice(), cred_book) {
         Err(e) => e,
         _ => panic!("Expecting an error!"),
     };
     v1_contents
 }
 
-fn deser_v1<'s, C, S, P>(
-    cred_source: &'s S,
-    adv: &'s EncodedAdvertisement,
-) -> V1AdvContents<'s, SimpleMatchedCredential<'s, [u8; 32]>>
+fn deser_v1<'adv, B, P>(
+    arena: DeserializationArena<'adv>,
+    adv: &'adv EncodedAdvertisement,
+    cred_book: &'adv B,
+) -> V1AdvertisementContents<'adv, B::Matched>
 where
-    C: V1Credential<Matched<'s> = SimpleMatchedCredential<'s, [u8; 32]>> + 's,
-    S: CredentialSource<C>,
+    B: CredentialBook<'adv>,
     P: CryptoProvider,
 {
-    deserialize_v1_advertisement::<C, S, P>(adv.as_slice(), cred_source).unwrap()
+    deserialize_advertisement::<_, P>(arena, adv.as_slice(), cred_book)
+        .expect("Should be a valid advertisement")
+        .into_v1()
+        .expect("Should be V1")
 }
 
 /// Populate a random number of sections with randomly chosen identities and random DEs
@@ -392,13 +438,15 @@ fn fill_encrypted_adv<'a, R: rand::Rng, C: CryptoProvider>(
     for _ in 0..rng.gen_range(0..=6) {
         let chosen_index = rng.gen_range(0..identities.len());
         let identity = &identities[chosen_index];
+
+        let broadcast_cm = identity.broadcast_credential();
+
         let res = if rng.gen_bool(0.5) {
             adv_builder
-                .section_builder(MicEncryptedSectionEncoder::new_random_salt(
+                .section_builder(MicEncryptedSectionEncoder::<C>::new_random_salt(
                     &mut salt_rng,
                     identity.identity_type,
-                    &identity.extended_metadata_key,
-                    &identity.hkdf(),
+                    &broadcast_cm,
                 ))
                 .map(|s| {
                     SectionConfig::new(
@@ -410,12 +458,10 @@ fn fill_encrypted_adv<'a, R: rand::Rng, C: CryptoProvider>(
                 })
         } else {
             adv_builder
-                .section_builder(SignedEncryptedSectionEncoder::new_random_salt(
+                .section_builder(SignedEncryptedSectionEncoder::<C>::new_random_salt(
                     &mut salt_rng,
                     identity.identity_type,
-                    &identity.extended_metadata_key,
-                    &identity.key_pair,
-                    &identity.hkdf(),
+                    &broadcast_cm,
                 ))
                 .map(|s| {
                     SectionConfig::new(
@@ -440,7 +486,7 @@ fn fill_encrypted_adv<'a, R: rand::Rng, C: CryptoProvider>(
 struct TestIdentity<C: CryptoProvider> {
     identity_type: EncryptedIdentityDataElementType,
     key_seed: [u8; 32],
-    extended_metadata_key: [u8; 16],
+    extended_metadata_key: MetadataKey,
     key_pair: np_ed25519::KeyPair<C>,
     marker: PhantomData<C>,
 }
@@ -453,33 +499,27 @@ impl<C: CryptoProvider> TestIdentity<C> {
                 .choose(rng)
                 .unwrap(),
             key_seed: rng.gen(),
-            extended_metadata_key: rng.gen(),
+            extended_metadata_key: MetadataKey(rng.gen()),
             key_pair: np_ed25519::KeyPair::<C>::generate(),
             marker: PhantomData,
         }
     }
-    /// Returns a credential using crypto material from this identity
-    fn credential(&self) -> SimpleV1Credential<MinimumFootprintV1CryptoMaterial, [u8; 32]> {
-        let hkdf = self.hkdf();
-        SimpleV1Credential::new(
-            MinimumFootprintV1CryptoMaterial::new(
-                self.key_seed,
-                hkdf.extended_unsigned_metadata_key_hmac_key()
-                    .calculate_hmac(&self.extended_metadata_key),
-                hkdf.extended_signed_metadata_key_hmac_key()
-                    .calculate_hmac(&self.extended_metadata_key),
-                self.key_pair.public(),
-            ),
+    /// Returns a (simple, signed) broadcast credential using crypto material from this identity
+    fn broadcast_credential(&self) -> SimpleSignedBroadcastCryptoMaterial {
+        SimpleSignedBroadcastCryptoMaterial::new(
             self.key_seed,
+            self.extended_metadata_key,
+            self.key_pair.private_key(),
         )
     }
-    fn hkdf(&self) -> np_hkdf::NpKeySeedHkdf<C> {
-        np_hkdf::NpKeySeedHkdf::<C>::new(&self.key_seed)
+    /// Returns a discovery credential using crypto material from this identity
+    fn discovery_credential(&self) -> V1DiscoveryCredential {
+        self.broadcast_credential().derive_v1_discovery_credential::<C>()
     }
 }
 /// Add several DEs with random types and contents
 fn add_des<I: SectionEncoder, R: rand::Rng>(
-    mut sb: SectionBuilder<I>,
+    mut sb: SectionBuilder<&mut AdvBuilder, I>,
     rng: &mut R,
 ) -> Vec<GenericDataElement> {
     let mut des = Vec::new();

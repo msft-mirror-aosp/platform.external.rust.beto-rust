@@ -14,12 +14,16 @@
 
 add_executable(
         np_ffi_tests
-        deserialize_result_tests.cc
-        deserialize_v0_tests.cc
-        deserialize_v1_tests.cc
-        global_config_tests.cc
-        credential_book_tests.cc
         byte_buffer_tests.cc
+        credential_book_tests.cc
+        credential_slab_tests.cc
+        deserialize_result_tests.cc
+        np_cpp_test.h
+        np_cpp_test.cc
+        v0_private_identity_tests.cc
+        v0_public_identity_tests.cc
+        v1_private_identity_tests.cc
+        v1_public_identity_tests.cc
 )
 
 target_link_libraries(

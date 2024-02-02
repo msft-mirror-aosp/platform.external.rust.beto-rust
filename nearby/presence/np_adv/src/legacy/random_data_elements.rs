@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 extern crate std;
 
 use crate::{
@@ -87,9 +89,8 @@ impl distributions::Distribution<ActionsDataElement<Ciphertext>> for distributio
                 ActionType::PresenceManager => bits.set_action(PresenceManager::from(true)),
                 ActionType::InstantTethering => bits.set_action(InstantTethering::from(true)),
                 ActionType::PhoneHub => bits.set_action(PhoneHub::from(true)),
-                ActionType::Finder | ActionType::FastPairSass => {
-                    unreachable!("not ciphertext actions")
-                }
+                ActionType::Finder => bits.set_action(Finder::from(true)),
+                ActionType::FastPairSass => bits.set_action(FastPairSass::from(true)),
             }
         }
 

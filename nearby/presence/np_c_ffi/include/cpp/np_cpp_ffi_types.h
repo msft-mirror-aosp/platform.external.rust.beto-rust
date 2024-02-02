@@ -36,6 +36,14 @@
 namespace np_ffi {
 namespace internal {
 
+/// Result type for trying to add a credential to a credential-slab.
+enum class AddCredentialToSlabResult : uint8_t {
+  /// We succeeded in adding the credential to the slab.
+  Success = 0,
+  /// The handle to the slab was actually invalid.
+  InvalidHandle = 1,
+};
+
 /// The possible boolean action types which can be present in an Actions data element
 enum class BooleanActionType : uint8_t {
   ActiveUnlock = 8,
@@ -49,11 +57,24 @@ enum class BooleanActionType : uint8_t {
 
 /// Discriminant for `CreateCredentialBookResult`
 enum class CreateCredentialBookResultKind : uint8_t {
-  /// There was no space left to create a new credential book
-  NoSpaceLeft = 0,
   /// We created a new credential book behind the given handle.
   /// The associated payload may be obtained via
   /// `CreateCredentialBookResult#into_success()`.
+  Success = 0,
+  /// There was no space left to create a new credential book
+  NoSpaceLeft = 1,
+  /// The slab that we tried to create a credential-book from
+  /// actually was an invalid handle.
+  InvalidSlabHandle = 2,
+};
+
+/// Discriminant for `CreateCredentialSlabResult`
+enum class CreateCredentialSlabResultKind : uint8_t {
+  /// There was no space left to create a new credential slab
+  NoSpaceLeft = 0,
+  /// We created a new credential slab behind the given handle.
+  /// The associated payload may be obtained via
+  /// `CreateCredentialSlabResult#into_success()`.
   Success = 1,
 };
 
@@ -64,6 +85,17 @@ enum class DeallocateResult {
   NotPresent = 0,
   /// The object behind the handle was successfully deallocated
   Success = 1,
+};
+
+/// Discriminant for `DecryptMetadataResult`.
+enum class DecryptMetadataResultKind : uint8_t {
+  /// The attempt to decrypt the metadata of the associated credential succeeded
+  /// The associated payload may be obtained via
+  /// `DecryptMetadataResult#into_success`.
+  Success,
+  /// The attempt to decrypt the metadata failed, either the payload had no matching identity
+  /// ie it was a public advertisement OR the decrypt attempt itself was unsuccessful
+  Error,
 };
 
 /// Discriminant for `DeserializeAdvertisementResult`.
@@ -93,14 +125,8 @@ enum class DeserializedV0AdvertisementKind : uint8_t {
   NoMatchingCredentials = 1,
 };
 
-/// Represents deserialized information about the V0 identity utilized
-/// by a deserialized V0 advertisement
-enum class DeserializedV0Identity {
-  Plaintext,
-  Decrypted,
-};
-
-/// Discriminant for `DeserializedV0Identity`.
+/// Discriminant for deserialized information about the V0
+/// identity utilized by a deserialized V0 advertisement.
 enum class DeserializedV0IdentityKind : uint8_t {
   /// The deserialized identity was a plaintext identity.
   Plaintext = 0,
@@ -117,6 +143,24 @@ enum class DeserializedV1IdentityKind : uint8_t {
   Decrypted = 1,
 };
 
+/// The DE type for an encrypted identity
+enum class EncryptedIdentityType : uint8_t {
+  /// Identity for broadcasts to nearby devices with the same
+  /// logged-in-account (for some account).
+  Private = 1,
+  /// Identity for broadcasts to nearby devices which this
+  /// device has declared to trust.
+  Trusted = 2,
+  /// Identity for broadcasts to devices which have been provisioned
+  /// offline with this device.
+  Provisioned = 4,
+};
+
+enum class GetMetadataBufferPartsResultKind : uint8_t {
+  Success = 0,
+  Error = 1,
+};
+
 /// Discriminant of `GetV0DEResult`.
 enum class GetV0DEResultKind : uint8_t {
   /// The attempt to get the DE succeeded.
@@ -130,6 +174,33 @@ enum class GetV0DEResultKind : uint8_t {
   Error = 1,
 };
 
+/// Discriminant for `GetV0IdentityDetailsResult`
+enum class GetV0IdentityDetailsResultKind : uint8_t {
+  /// The attempt to get the identity details
+  /// for the advertisement failed, possibly
+  /// due to the advertisement being a public
+  /// advertisement, or the underlying
+  /// advertisement has already been deallocated.
+  Error = 0,
+  /// The attempt to get the identity details succeeded.
+  /// The wrapped identity details may be obtained via
+  /// `GetV0IdentityDetailsResult#into_success`.
+  Success = 1,
+};
+
+/// Discriminant for `GetV1DE16ByteSaltResult`.
+enum class GetV1DE16ByteSaltResultKind : uint8_t {
+  /// The attempt to get the derived salt failed, possibly
+  /// because the passed DE offset was invalid (==255),
+  /// or because there was no salt included for the
+  /// referenced advertisement section (i.e: it was
+  /// a public advertisement section, or it was deallocated.)
+  Error = 0,
+  /// A 16-byte salt for the given DE offset was successfully
+  /// derived.
+  Success = 1,
+};
+
 /// Discriminant for the `GetV1DEResult` enum.
 enum class GetV1DEResultKind : uint8_t {
   /// Attempting to get the DE at the given position failed,
@@ -138,6 +209,20 @@ enum class GetV1DEResultKind : uint8_t {
   Error = 0,
   /// Attempting to get the DE at the given position succeeded.
   /// The underlying DE may be extracted with `GetV1DEResult#into_success`.
+  Success = 1,
+};
+
+/// Discriminant for `GetV1IdentityDetailsResult`
+enum class GetV1IdentityDetailsResultKind : uint8_t {
+  /// The attempt to get the identity details
+  /// for the section failed, possibly
+  /// due to the section being a public
+  /// section, or the underlying
+  /// advertisement has already been deallocated.
+  Error = 0,
+  /// The attempt to get the identity details succeeded.
+  /// The wrapped identity details may be obtained via
+  /// `GetV1IdentityDetailsResult#into_success`.
   Success = 1,
 };
 
@@ -185,6 +270,16 @@ enum class V0DataElementKind : uint8_t {
   Actions = 1,
 };
 
+/// Information about the verification scheme used
+/// for verifying the integrity of the contents
+/// of a decrypted section.
+enum class V1VerificationMode : uint8_t {
+  /// Message integrity code verification.
+  Mic = 0,
+  /// Signature verification.
+  Signature = 1,
+};
+
 ///A `#[repr(C)]` handle to a value of type `super::CredentialBookInternals`.
 struct CredentialBook {
   uint64_t handle_id;
@@ -193,8 +288,9 @@ struct CredentialBook {
 /// Result type for `create_credential_book`
 union CreateCredentialBookResult {
   enum class Tag : uint8_t {
-    NoSpaceLeft = 0,
-    Success = 1,
+    Success = 0,
+    NoSpaceLeft = 1,
+    InvalidSlabHandle = 2,
   };
 
   struct Success_Body {
@@ -208,6 +304,111 @@ union CreateCredentialBookResult {
   Success_Body success;
 };
 
+///A `#[repr(C)]` handle to a value of type `super::CredentialSlabInternals`.
+struct CredentialSlab {
+  uint64_t handle_id;
+};
+
+/// Result type for `create_credential_slab`
+struct CreateCredentialSlabResult {
+  enum class Tag {
+    NoSpaceLeft,
+    Success,
+  };
+
+  struct Success_Body {
+    CredentialSlab _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// Cryptographic information about a particular V0 discovery credential
+/// necessary to match and decrypt encrypted V0 advertisements.
+struct V0DiscoveryCredential {
+  uint8_t key_seed[32];
+  uint8_t legacy_metadata_key_hmac[32];
+};
+
+/// A representation of a MatchedCredential which is passable across the FFI boundary
+struct FfiMatchedCredential {
+  uint32_t cred_id;
+  const uint8_t *encrypted_metadata_bytes_buffer;
+  uintptr_t encrypted_metadata_bytes_len;
+};
+
+/// Representation of a V0 credential that contains additional data to provide back to caller once it
+/// is matched. The credential_id can be used by the caller to correlate it back to the full
+/// credentials details.
+struct V0MatchableCredential {
+  V0DiscoveryCredential discovery_cred;
+  FfiMatchedCredential matched_cred;
+};
+
+/// Cryptographic information about a particular V1 discovery credential
+/// necessary to match and decrypt encrypted V1 advertisement sections.
+struct V1DiscoveryCredential {
+  uint8_t key_seed[32];
+  uint8_t expected_unsigned_metadata_key_hmac[32];
+  uint8_t expected_signed_metadata_key_hmac[32];
+  uint8_t pub_key[32];
+};
+
+/// Representation of a V1 credential that contains additional data to provide back to caller once it
+/// is matched. The credential_id can be used by the caller to correlate it back to the full
+/// credentials details.
+struct V1MatchableCredential {
+  V1DiscoveryCredential discovery_cred;
+  FfiMatchedCredential matched_cred;
+};
+
+///A `#[repr(C)]` handle to a value of type `super::DecryptedMetadataInternals`.
+struct DecryptedMetadata {
+  uint64_t handle_id;
+};
+
+/// The result of decrypting metadata from either a V0Payload or DeserializedV1Section
+struct DecryptMetadataResult {
+  enum class Tag {
+    Success,
+    Error,
+  };
+
+  struct Success_Body {
+    DecryptedMetadata _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// The pointer and length of the decrypted metadata byte buffer
+struct MetadataBufferParts {
+  const uint8_t *ptr;
+  uintptr_t len;
+};
+
+struct GetMetadataBufferPartsResult {
+  enum class Tag {
+    Success,
+    Error,
+  };
+
+  struct Success_Body {
+    MetadataBufferParts _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
 ///A `#[repr(C)]` handle to a value of type `super::V0PayloadInternals`.
 struct V0Payload {
   uint64_t handle_id;
@@ -217,7 +418,7 @@ struct V0Payload {
 struct LegibleDeserializedV0Advertisement {
   uint8_t num_des;
   V0Payload payload;
-  DeserializedV0Identity identity;
+  DeserializedV0IdentityKind identity_kind;
 };
 
 /// Represents a deserialized V0 advertisement
@@ -372,6 +573,39 @@ struct GetV0DEResult {
   };
 };
 
+/// Information about the identity which matched a
+/// decrypted V0 advertisement.
+struct DeserializedV0IdentityDetails {
+  /// The identity type (private/provisioned/trusted)
+  EncryptedIdentityType identity_type;
+  /// The ID of the credential which
+  /// matched the deserialized adv
+  uint32_t cred_id;
+  /// The 14-byte legacy metadata key
+  uint8_t metadata_key[14];
+  /// The 2-byte advertisement salt
+  uint8_t salt[2];
+};
+
+/// The result of attempting to get the identity details
+/// for a V0 advertisement via
+/// `DeserializedV0Advertisement#get_identity_details`.
+struct GetV0IdentityDetailsResult {
+  enum class Tag {
+    Error,
+    Success,
+  };
+
+  struct Success_Body {
+    DeserializedV0IdentityDetails _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
 /// Handle to a deserialized V1 section
 struct DeserializedV1Section {
   LegibleV1Sections legible_sections_handle;
@@ -409,6 +643,8 @@ struct V1DEType {
 /// This representation is stable, and so you may directly
 /// reference this struct's fields if you wish.
 struct GenericV1DataElement {
+  /// The offset of this generic data-element.
+  uint8_t offset;
   /// The DE type code of this generic data-element.
   V1DEType de_type;
   /// The raw data-element byte payload, up to
@@ -444,6 +680,64 @@ struct GetV1DEResult {
 
   struct Success_Body {
     V1DataElement _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// Information about the identity which matched
+/// a decrypted V1 section.
+struct DeserializedV1IdentityDetails {
+  /// The identity type (private/provisioned/trusted)
+  EncryptedIdentityType identity_type;
+  /// The verification mode (MIC/Signature) which
+  /// was used to verify the decrypted adv contents.
+  V1VerificationMode verification_mode;
+  /// The ID of the credential which
+  /// matched the deserialized section.
+  uint32_t cred_id;
+  /// The 16-byte metadata key.
+  uint8_t metadata_key[16];
+};
+
+/// The result of attempting to get the identity details
+/// for a V1 advertisement section via
+/// `DeserializedV1Advertisement#get_identity_details`.
+struct GetV1IdentityDetailsResult {
+  enum class Tag {
+    Error,
+    Success,
+  };
+
+  struct Success_Body {
+    DeserializedV1IdentityDetails _0;
+  };
+
+  Tag tag;
+  union {
+    Success_Body success;
+  };
+};
+
+/// A FFI safe wrapper of a fixed size array
+template<uintptr_t N>
+struct FixedSizeArray {
+  uint8_t _0[N];
+};
+
+/// The result of attempting to get a derived 16-byte salt
+/// for a given DE within a section.
+struct GetV1DE16ByteSaltResult {
+  enum class Tag {
+    Error,
+    Success,
+  };
+
+  struct Success_Body {
+    FixedSizeArray<16> _0;
   };
 
   Tag tag;

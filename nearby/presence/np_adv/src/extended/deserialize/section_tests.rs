@@ -12,32 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 extern crate std;
 
 use super::*;
+use crate::deserialization_arena;
+use crate::deserialization_arena::DeserializationArena;
 use crate::extended::serialize::AdvertisementType;
 use crate::extended::NP_V1_ADV_MAX_PUBLIC_SECTION_COUNT;
 use crate::{
     credential::{
-        simple::SimpleV1Credential,
-        source::{CredentialSource, SliceCredentialSource},
-        MatchableCredential, V1Credential,
+        source::{DiscoveryCredentialSource, SliceCredentialSource},
+        v1::{SignedBroadcastCryptoMaterial, SimpleSignedBroadcastCryptoMaterial, V1},
+        DiscoveryCryptoMaterial, EmptyMatchedCredential, MatchableCredential,
+        MetadataMatchedCredential, SimpleBroadcastCryptoMaterial,
     },
     extended::{
         data_elements::GenericDataElement,
-        deserialize::{
-            convert_data_elements,
-            test_stubs::{HkdfCryptoMaterial, IntermediateSectionExt},
-            OffsetDataElement,
-        },
+        deserialize::{test_stubs::IntermediateSectionExt, DataElement},
         serialize::{
             self, AdvBuilder, MicEncryptedSectionEncoder, PublicSectionEncoder, SectionBuilder,
             SignedEncryptedSectionEncoder, WriteDataElement,
         },
         MAX_DE_LEN,
     },
-    parse_adv_header, AdvHeader,
+    parse_adv_header, AdvHeader, WithMatchedCredential,
 };
+use core::borrow::Borrow;
+use core::convert::Into;
 use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_default::CryptoProviderImpl;
 use rand::{seq::SliceRandom as _, Rng as _, SeedableRng as _};
@@ -51,7 +54,6 @@ fn deserialize_public_identity_section() {
     do_deserialize_section_unencrypted::<PublicSectionEncoder>(
         PublicSectionEncoder::default(),
         PlaintextIdentityMode::Public,
-        1,
         1,
     );
 }
@@ -71,17 +73,32 @@ fn deserialize_mic_encrypted_rand_identities_finds_correct_one() {
         // share a metadata key to emphasize that we're _only_ using the identity to
         // differentiate
         let metadata_key: [u8; 16] = rng.gen();
+        let metadata_key = MetadataKey(metadata_key);
 
         let creds = identities
             .iter()
-            .enumerate()
-            .map(|(index, (key_seed, key_pair))| {
-                SimpleV1Credential::new(
-                    HkdfCryptoMaterial::new(key_seed, &metadata_key, key_pair.public()),
-                    index,
+            .map(|(key_seed, key_pair)| {
+                SimpleSignedBroadcastCryptoMaterial::new(
+                    *key_seed,
+                    metadata_key,
+                    key_pair.private_key(),
                 )
             })
+            .enumerate()
+            .map(|(index, broadcast_cm)| {
+                let match_data = MetadataMatchedCredential::<Vec<u8>>::encrypt_from_plaintext::<
+                    _,
+                    _,
+                    CryptoProviderImpl,
+                >(&broadcast_cm, &[index as u8]);
+
+                let discovery_credential =
+                    broadcast_cm.derive_v1_discovery_credential::<CryptoProviderImpl>();
+
+                MatchableCredential { discovery_credential, match_data }
+            })
             .collect::<Vec<_>>();
+
         let cred_source = SliceCredentialSource::new(&creds);
 
         let identity_type =
@@ -89,18 +106,19 @@ fn deserialize_mic_encrypted_rand_identities_finds_correct_one() {
 
         let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
 
-        let hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(chosen_key_seed);
+        let broadcast_cm = SimpleBroadcastCryptoMaterial::<V1>::new(*chosen_key_seed, metadata_key);
+
         let mut section_builder = adv_builder
-            .section_builder(MicEncryptedSectionEncoder::new_random_salt(
+            .section_builder(MicEncryptedSectionEncoder::<CryptoProviderImpl>::new_random_salt(
                 &mut crypto_rng,
                 identity_type,
-                &metadata_key,
-                &hkdf,
+                &broadcast_cm,
             ))
             .unwrap();
 
-        let (expected_de_data, expected_des, orig_des) =
-            fill_section_random_des(&mut rng, &mut section_builder, 2);
+        let mut expected_de_data = vec![];
+        let (expected_des, orig_des) =
+            fill_section_random_des(&mut rng, &mut expected_de_data, &mut section_builder, 2);
 
         section_builder.add_to_advertisement();
 
@@ -116,29 +134,33 @@ fn deserialize_mic_encrypted_rand_identities_finds_correct_one() {
 
         let sections = parse_sections(v1_header, remaining).unwrap();
         assert_eq!(1, sections.len());
-        let (section, cred) = try_deserialize_all_creds::<_, _, CryptoProviderImpl>(
-            sections[0].as_ciphertext().unwrap(),
-            &cred_source,
-        )
-        .unwrap()
-        .unwrap();
 
-        assert_eq!(&chosen_index, cred.matched_data());
+        let arena = deserialization_arena!();
 
+        let section = sections[0].as_ciphertext().unwrap();
+        let matched_section =
+            try_deserialize_all_creds::<_, CryptoProviderImpl>(arena, section, &cred_source)
+                .unwrap()
+                .unwrap();
+
+        // Verify that the decrypted metadata contains the chosen index
+        let decrypted_metadata = matched_section.decrypt_metadata::<CryptoProviderImpl>().unwrap();
+        assert_eq!([chosen_index as u8].as_slice(), &decrypted_metadata);
+
+        // Verify that the section contents passed through unaltered
+        let section = matched_section.contents();
         assert_eq!(section.identity_type(), identity_type);
         assert_eq!(section.verification_mode(), VerificationMode::Mic);
-        assert_eq!(section.metadata_key(), &metadata_key);
+        assert_eq!(section.metadata_key(), metadata_key);
         assert_eq!(
-            section.contents,
-            SectionContents {
-                section_header: (19 + 2 + 16 + total_de_len(&orig_des) + 16) as u8,
-                de_data: ArrayView::try_from_slice(expected_de_data.as_slice()).unwrap(),
-                data_elements: expected_des,
-            }
+            section.contents.section_header,
+            (19 + 2 + 16 + total_de_len(&orig_des) + 16) as u8
         );
+        let data_elements = section.collect_data_elements().unwrap();
+        assert_eq!(data_elements, expected_des);
         assert_eq!(
-            section
-                .data_elements()
+            data_elements
+                .iter()
                 .map(|de| GenericDataElement::try_from(de.de_type(), de.contents()).unwrap())
                 .collect::<Vec<_>>(),
             orig_des
@@ -159,27 +181,31 @@ fn deserialize_signature_encrypted_rand_identities_finds_correct_one() {
         // share a metadata key to emphasize that we're _only_ using the identity to
         // differentiate
         let metadata_key: [u8; 16] = rng.gen();
+        let metadata_key = MetadataKey(metadata_key);
 
         let creds = identities
             .iter()
-            .enumerate()
-            .map(|(index, (key_seed, key_pair))| {
-                let hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(key_seed);
-                let unsigned =
-                    hkdf.extended_unsigned_metadata_key_hmac_key().calculate_hmac(&metadata_key);
-                let signed =
-                    hkdf.extended_signed_metadata_key_hmac_key().calculate_hmac(&metadata_key);
-                SimpleV1Credential::new(
-                    HkdfCryptoMaterial {
-                        hkdf: *key_seed,
-                        expected_unsigned_metadata_key_hmac: unsigned,
-                        expected_signed_metadata_key_hmac: signed,
-                        pub_key: key_pair.public().to_bytes(),
-                    },
-                    index,
+            .map(|(key_seed, key_pair)| {
+                SimpleSignedBroadcastCryptoMaterial::new(
+                    *key_seed,
+                    metadata_key,
+                    key_pair.private_key(),
                 )
             })
+            .enumerate()
+            .map(|(index, broadcast_cm)| {
+                let match_data = MetadataMatchedCredential::<Vec<u8>>::encrypt_from_plaintext::<
+                    _,
+                    _,
+                    CryptoProviderImpl,
+                >(&broadcast_cm, &[index as u8]);
+
+                let discovery_credential =
+                    broadcast_cm.derive_v1_discovery_credential::<CryptoProviderImpl>();
+                MatchableCredential { discovery_credential, match_data }
+            })
             .collect::<Vec<_>>();
+
         let cred_source = SliceCredentialSource::new(&creds);
 
         let identity_type =
@@ -187,19 +213,23 @@ fn deserialize_signature_encrypted_rand_identities_finds_correct_one() {
 
         let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
 
-        let hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(chosen_key_seed);
+        let broadcast_cm = SimpleSignedBroadcastCryptoMaterial::new(
+            *chosen_key_seed,
+            metadata_key,
+            chosen_key_pair.private_key(),
+        );
+
         let mut section_builder = adv_builder
-            .section_builder(SignedEncryptedSectionEncoder::new_random_salt(
+            .section_builder(SignedEncryptedSectionEncoder::<CryptoProviderImpl>::new_random_salt(
                 &mut crypto_rng,
                 identity_type,
-                &metadata_key,
-                chosen_key_pair,
-                &hkdf,
+                &broadcast_cm,
             ))
             .unwrap();
 
-        let (expected_de_data, expected_des, orig_des) =
-            fill_section_random_des(&mut rng, &mut section_builder, 2);
+        let mut expected_de_data = vec![];
+        let (expected_des, orig_des) =
+            fill_section_random_des(&mut rng, &mut expected_de_data, &mut section_builder, 2);
 
         section_builder.add_to_advertisement();
 
@@ -213,31 +243,35 @@ fn deserialize_signature_encrypted_rand_identities_finds_correct_one() {
             panic!("incorrect header");
         };
 
+        let arena = deserialization_arena!();
+
         let sections = parse_sections(v1_header, remaining).unwrap();
         assert_eq!(1, sections.len());
-        let (section, cred) = try_deserialize_all_creds::<_, _, CryptoProviderImpl>(
-            sections[0].as_ciphertext().unwrap(),
-            &cred_source,
-        )
-        .unwrap()
-        .unwrap();
 
-        assert_eq!(&chosen_index, cred.matched_data());
+        let section = sections[0].as_ciphertext().unwrap();
+        let matched_section =
+            try_deserialize_all_creds::<_, CryptoProviderImpl>(arena, section, &cred_source)
+                .unwrap()
+                .unwrap();
 
+        // Verify that the decrypted metadata contains the chosen index
+        let decrypted_metadata = matched_section.decrypt_metadata::<CryptoProviderImpl>().unwrap();
+        assert_eq!([chosen_index as u8].as_slice(), &decrypted_metadata);
+
+        // Verify that the section contents passed through unaltered
+        let section = matched_section.contents();
         assert_eq!(section.identity_type(), identity_type);
         assert_eq!(section.verification_mode(), VerificationMode::Signature);
-        assert_eq!(section.metadata_key(), &metadata_key);
+        assert_eq!(section.metadata_key(), metadata_key);
         assert_eq!(
-            section.contents,
-            SectionContents {
-                section_header: (19 + 2 + 16 + 64 + total_de_len(&orig_des)) as u8,
-                de_data: ArrayView::try_from_slice(expected_de_data.as_slice()).unwrap(),
-                data_elements: expected_des,
-            }
+            section.contents.section_header,
+            (19 + 2 + 16 + 64 + total_de_len(&orig_des)) as u8
         );
+        let data_elements = section.collect_data_elements().unwrap();
+        assert_eq!(data_elements, expected_des);
         assert_eq!(
-            section
-                .data_elements()
+            data_elements
+                .iter()
                 .map(|de| GenericDataElement::try_from(de.de_type(), de.contents()).unwrap())
                 .collect::<Vec<_>>(),
             orig_des
@@ -260,17 +294,24 @@ fn deserialize_encrypted_no_matching_identities_finds_nothing() {
         // share a metadata key to emphasize that we're _only_ using the identity to
         // differentiate
         let metadata_key: [u8; 16] = rng.gen();
+        let metadata_key = MetadataKey(metadata_key);
 
         let credentials = identities
             .iter()
-            .enumerate()
-            .map(|(index, (key_seed, key_pair))| {
-                SimpleV1Credential::new(
-                    HkdfCryptoMaterial::new(key_seed, &metadata_key, key_pair.public()),
-                    index,
+            .map(|(key_seed, key_pair)| {
+                SimpleSignedBroadcastCryptoMaterial::new(
+                    *key_seed,
+                    metadata_key,
+                    key_pair.private_key(),
                 )
+                .derive_v1_discovery_credential::<CryptoProviderImpl>()
+            })
+            .map(|discovery_credential| MatchableCredential {
+                discovery_credential,
+                match_data: EmptyMatchedCredential,
             })
             .collect::<Vec<_>>();
+
         let cred_source = SliceCredentialSource::new(&credentials);
 
         let identity_type =
@@ -278,30 +319,35 @@ fn deserialize_encrypted_no_matching_identities_finds_nothing() {
 
         let mut adv_builder = AdvBuilder::new(AdvertisementType::Encrypted);
 
-        let hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&chosen_key_seed);
+        let broadcast_cm = SimpleSignedBroadcastCryptoMaterial::new(
+            chosen_key_seed,
+            metadata_key,
+            chosen_key_pair.private_key(),
+        );
 
         // awkward split because SectionEncoder isn't object-safe, so we can't just have a
         // Box<dyn SectionEncoder> and use that in one code path
         if signed {
-            let identity = SignedEncryptedSectionEncoder::new_random_salt(
+            let identity = SignedEncryptedSectionEncoder::<CryptoProviderImpl>::new_random_salt(
                 &mut crypto_rng,
                 identity_type,
-                &metadata_key,
-                &chosen_key_pair,
-                &hkdf,
+                &broadcast_cm,
             );
             let mut section_builder = adv_builder.section_builder(identity).unwrap();
-            let _ = fill_section_random_des(&mut rng, &mut section_builder, 2);
+            let mut expected_de_data = vec![];
+            let _ =
+                fill_section_random_des(&mut rng, &mut expected_de_data, &mut section_builder, 2);
             section_builder.add_to_advertisement();
         } else {
-            let identity = MicEncryptedSectionEncoder::new_random_salt(
+            let identity = MicEncryptedSectionEncoder::<CryptoProviderImpl>::new_random_salt(
                 &mut crypto_rng,
                 identity_type,
-                &metadata_key,
-                &hkdf,
+                &broadcast_cm,
             );
             let mut section_builder = adv_builder.section_builder(identity).unwrap();
-            let _ = fill_section_random_des(&mut rng, &mut section_builder, 2);
+            let mut expected_de_data = vec![];
+            let _ =
+                fill_section_random_des(&mut rng, &mut expected_de_data, &mut section_builder, 2);
             section_builder.add_to_advertisement();
         };
 
@@ -316,9 +362,10 @@ fn deserialize_encrypted_no_matching_identities_finds_nothing() {
         let sections = parse_sections(v1_header, remaining).unwrap();
         assert_eq!(1, sections.len());
 
-        assert!(try_deserialize_all_creds::<_, _, CryptoProviderImpl>(
+        assert!(try_deserialize_all_creds::<_, CryptoProviderImpl>(
+            deserialization_arena!(),
             sections[0].as_ciphertext().unwrap(),
-            &cred_source
+            &cred_source,
         )
         .unwrap()
         .is_none());
@@ -326,138 +373,30 @@ fn deserialize_encrypted_no_matching_identities_finds_nothing() {
 }
 
 #[test]
-fn convert_data_elements_empty() {
-    let orig_des = vec![];
-
-    let (des, data) = convert_data_elements(&orig_des);
-
-    assert_eq!(Vec::<OffsetDataElement>::new(), des);
-    assert_eq!(&Vec::<u8>::new(), data.as_slice());
-}
-
-#[test]
-fn convert_data_elements_just_fits() {
-    // this is actually longer than any real section's worth of DEs could be since we aren't putting
-    // DE headers in the array
-    let orig_data = vec![0x33; 1000];
-
-    let orig_des = vec![
-        RefDataElement {
-            offset: 2.into(),
-            header_len: 2,
-            de_type: 100_u32.into(),
-            contents: &orig_data[0..10],
-        },
-        RefDataElement {
-            offset: 3.into(),
-            header_len: 2,
-            de_type: 101_u32.into(),
-            contents: &orig_data[10..100],
-        },
-        RefDataElement {
-            offset: 4.into(),
-            header_len: 2,
-            de_type: 102_u32.into(),
-            contents: &orig_data[100..NP_ADV_MAX_SECTION_LEN],
-        },
-    ];
-
-    let (des, data) = convert_data_elements(&orig_des);
-
-    assert_eq!(
-        &[
-            OffsetDataElement {
-                offset: 2.into(),
-                de_type: 100_u32.into(),
-                start_of_contents: 0,
-                contents_len: 10
-            },
-            OffsetDataElement {
-                offset: 3.into(),
-                de_type: 101_u32.into(),
-                start_of_contents: 10,
-                contents_len: 90
-            },
-            OffsetDataElement {
-                offset: 4.into(),
-                de_type: 102_u32.into(),
-                start_of_contents: 100,
-                contents_len: NP_ADV_MAX_SECTION_LEN - 100,
-            },
-        ],
-        &des[..]
-    );
-    assert_eq!(&[0x33; NP_ADV_MAX_SECTION_LEN], data.as_slice());
-}
-
-#[test]
-#[should_panic]
-fn convert_data_elements_doesnt_fit_panic() {
-    let orig_data = vec![0x33; 1000];
-    let orig_des = vec![
-        RefDataElement {
-            offset: 2.into(),
-            header_len: 2,
-            de_type: 100_u32.into(),
-            contents: &orig_data[0..10],
-        },
-        // impossibly large DE
-        RefDataElement {
-            offset: 3.into(),
-            header_len: 2,
-            de_type: 101_u32.into(),
-            contents: &orig_data[10..500],
-        },
-    ];
-
-    let _ = convert_data_elements(&orig_des);
-}
-
-#[test]
 fn section_des_expose_correct_data() {
-    let mut orig_data = Vec::new();
-    orig_data.resize(130, 0);
-    for (index, byte) in orig_data.iter_mut().enumerate() {
-        *byte = index as u8;
-    }
-
-    let orig_des = vec![
-        OffsetDataElement {
-            offset: 2.into(),
-            de_type: 100_u32.into(),
-            start_of_contents: 0,
-            contents_len: 10,
-        },
-        OffsetDataElement {
-            offset: 3.into(),
-            de_type: 101_u32.into(),
-            start_of_contents: 10,
-            contents_len: 90,
-        },
-        OffsetDataElement {
-            offset: 4.into(),
-            de_type: 102_u32.into(),
-            start_of_contents: 100,
-            contents_len: 30,
-        },
-    ];
+    // 2 sections, 3 DEs each
+    let mut de_data = vec![];
+    // de 1 byte header, type 5, len 5
+    de_data.extend_from_slice(&[0x55, 0x01, 0x02, 0x03, 0x04, 0x05]);
+    // de 2 byte header, type 16, len 1
+    de_data.extend_from_slice(&[0x81, 0x10, 0x01]);
 
     let section = SectionContents {
         section_header: 99,
-        de_data: ArrayView::try_from_slice(&orig_data).unwrap(),
-        data_elements: orig_des,
+        de_region_excl_identity: &de_data,
+        data_element_start_offset: 2,
     };
 
     // extract out the parts of the DE we care about
-    let des = section
-        .data_elements()
-        .map(|de| (de.offset(), de.de_type(), de.contents().to_vec()))
-        .collect::<Vec<_>>();
+    let des = section.iter_data_elements().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(
         vec![
-            (2.into(), 100_u32.into(), orig_data[0..10].to_vec()),
-            (3.into(), 101_u32.into(), orig_data[10..100].to_vec()),
-            (4.into(), 102_u32.into(), orig_data[100..].to_vec())
+            DataElement {
+                offset: 2.into(),
+                de_type: 5_u32.into(),
+                contents: &[0x01, 0x02, 0x03, 0x04, 0x05]
+            },
+            DataElement { offset: 3.into(), de_type: 16_u32.into(), contents: &[0x01] },
         ],
         des
     );
@@ -474,7 +413,7 @@ fn do_deserialize_zero_section_header() {
     } else {
         panic!("incorrect header");
     };
-    parse_sections(v1_header, remaining).expect_err("Expected an error");
+    let _ = parse_sections(v1_header, remaining).expect_err("Expected an error");
 }
 
 #[test]
@@ -487,7 +426,7 @@ fn do_deserialize_empty_section() {
     } else {
         panic!("incorrect header");
     };
-    parse_sections(v1_header, remaining).expect_err("Expected an error");
+    let _ = parse_sections(v1_header, remaining).expect_err("Expected an error");
 }
 
 #[test]
@@ -526,7 +465,7 @@ fn try_deserialize_over_max_number_of_public_sections() {
     } else {
         panic!("incorrect header");
     };
-    parse_sections(v1_header, remaining)
+    let _ = parse_sections(v1_header, remaining)
         .expect_err("Expected an error because number of sections is over limit");
 }
 
@@ -542,7 +481,6 @@ pub(crate) fn random_de<R: rand::Rng>(rng: &mut R) -> GenericDataElement {
 fn do_deserialize_section_unencrypted<I: serialize::SectionEncoder>(
     identity: I,
     expected_identity: PlaintextIdentityMode,
-    prefix_len: usize,
     de_offset: usize,
 ) {
     let mut rng = rand::rngs::StdRng::from_entropy();
@@ -550,8 +488,9 @@ fn do_deserialize_section_unencrypted<I: serialize::SectionEncoder>(
     let mut adv_builder = AdvBuilder::new(AdvertisementType::Plaintext);
     let mut section_builder = adv_builder.section_builder(identity).unwrap();
 
-    let (expected_de_data, expected_des, orig_des) =
-        fill_section_random_des(&mut rng, &mut section_builder, de_offset);
+    let mut expected_de_data = vec![];
+    let (expected_des, orig_des) =
+        fill_section_random_des(&mut rng, &mut expected_de_data, &mut section_builder, de_offset);
 
     section_builder.add_to_advertisement();
 
@@ -569,37 +508,29 @@ fn do_deserialize_section_unencrypted<I: serialize::SectionEncoder>(
     assert_eq!(1, sections.len());
     let section = sections[0].as_plaintext().unwrap();
 
+    assert_eq!(section.identity(), expected_identity);
+    let data_elements = section.collect_data_elements().unwrap();
+    assert_eq!(data_elements, expected_des);
     assert_eq!(
-        &PlaintextSection {
-            identity: expected_identity,
-            contents: SectionContents {
-                section_header: (prefix_len + total_de_len(&orig_des)) as u8,
-                de_data: ArrayView::try_from_slice(expected_de_data.as_slice()).unwrap(),
-                data_elements: expected_des,
-            }
-        },
-        section
-    );
-    assert_eq!(
-        section
-            .contents
-            .data_elements()
+        data_elements
+            .iter()
             .map(|de| GenericDataElement::try_from(de.de_type(), de.contents()).unwrap())
             .collect::<Vec<_>>(),
         orig_des
     );
 }
 
-fn fill_section_random_des<R: rand::Rng, I: serialize::SectionEncoder>(
+fn fill_section_random_des<'adv, R: rand::Rng, I: serialize::SectionEncoder>(
     mut rng: &mut R,
-    section_builder: &mut SectionBuilder<I>,
+    sink: &'adv mut Vec<u8>,
+    section_builder: &mut SectionBuilder<&mut AdvBuilder, I>,
     de_offset: usize,
-) -> (Vec<u8>, Vec<OffsetDataElement>, Vec<GenericDataElement>) {
-    let mut expected_de_data = vec![];
+) -> (Vec<DataElement<'adv>>, Vec<GenericDataElement>) {
     let mut expected_des = vec![];
     let mut orig_des = vec![];
+    let mut de_ranges = vec![];
 
-    for index in 0..rng.gen_range(1..10) {
+    for _ in 0..rng.gen_range(1..10) {
         let de = random_de(&mut rng);
 
         let de_clone = de.clone();
@@ -607,54 +538,64 @@ fn fill_section_random_des<R: rand::Rng, I: serialize::SectionEncoder>(
             break;
         }
 
-        let orig_len = expected_de_data.len();
-        de.write_de_contents(&mut expected_de_data).unwrap();
-        let contents_len = expected_de_data.len() - orig_len;
-
-        expected_des.push(OffsetDataElement {
-            offset: (index as usize + de_offset).into(),
-            de_type: de.de_header().de_type,
-            contents_len,
-            start_of_contents: orig_len,
-        });
+        let orig_len = sink.len();
+        de.write_de_contents(sink).unwrap();
+        let contents_len = sink.len() - orig_len;
+        de_ranges.push(orig_len..orig_len + contents_len);
         orig_des.push(de);
     }
-    (expected_de_data, expected_des, orig_des)
+
+    for (index, (de, range)) in orig_des.iter().zip(de_ranges).enumerate() {
+        expected_des.push(DataElement {
+            offset: u8::try_from(index + de_offset).unwrap().into(),
+            de_type: de.de_header().de_type,
+            contents: &sink[range],
+        });
+    }
+    (expected_des, orig_des)
 }
 
 fn total_de_len(des: &[GenericDataElement]) -> usize {
     des.iter()
         .map(|de| {
             let mut buf = vec![];
-            de.write_de_contents(&mut buf);
+            let _ = de.write_de_contents(&mut buf);
             de.de_header().serialize().len() + buf.len()
         })
         .sum()
 }
 
-type TryDeserOutput<'c, C> = Option<(DecryptedSection, <C as MatchableCredential>::Matched<'c>)>;
+type TryDeserOutput<'adv, M> = Option<WithMatchedCredential<M, DecryptedSection<'adv>>>;
 
 /// Returns:
 /// - `Ok(Some)` if a matching credential was found
 /// - `Ok(None)` if no matching credential was found, or if `cred_source` provides no credentials
 /// - `Err` if an error occurred.
-fn try_deserialize_all_creds<'c, C, S, P>(
-    section: &CiphertextSection,
-    cred_source: &'c S,
-) -> Result<TryDeserOutput<'c, C>, BatchSectionDeserializeError>
+fn try_deserialize_all_creds<'a, S, P>(
+    arena: DeserializationArena<'a>,
+    section: &'a CiphertextSection,
+    cred_source: &'a S,
+) -> Result<TryDeserOutput<'a, S::Matched>, BatchSectionDeserializeError>
 where
-    C: V1Credential,
-    S: CredentialSource<C>,
+    S: DiscoveryCredentialSource<'a, V1>,
     P: CryptoProvider,
 {
-    for c in cred_source.iter() {
-        let crypto_material = c.crypto_material();
-        match section.try_resolve_identity_and_deserialize::<_, P>(crypto_material) {
-            Ok(s) => return Ok(Some((s, c.matched()))),
+    let mut allocator = arena.into_allocator();
+    for (crypto_material, match_data) in cred_source.iter() {
+        match section
+            .try_resolve_identity_and_deserialize::<_, P>(&mut allocator, crypto_material.borrow())
+        {
+            Ok(s) => {
+                let metadata_nonce = crypto_material.metadata_nonce::<P>();
+                return Ok(Some(WithMatchedCredential::new(match_data, metadata_nonce, s)));
+            }
             Err(e) => match e {
                 SectionDeserializeError::IncorrectCredential => continue,
                 SectionDeserializeError::ParseError => {
                     return Err(BatchSectionDeserializeError::ParseError)
+                }
+                SectionDeserializeError::ArenaOutOfSpace => {
+                    return Err(BatchSectionDeserializeError::ArenaOutOfSpace)
                 }
             },
         }
@@ -676,4 +617,6 @@ fn build_dummy_advertisement_sections(number_of_sections: usize) -> AdvBuilder {
 enum BatchSectionDeserializeError {
     /// Advertisement data is malformed
     ParseError,
+    /// The given arena is not large enough to hold the decrypted data
+    ArenaOutOfSpace,
 }

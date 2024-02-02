@@ -33,6 +33,21 @@
 #include <stdlib.h>
 
 /**
+ * Result type for trying to add a credential to a credential-slab.
+ */
+enum np_ffi_AddCredentialToSlabResult {
+  /**
+   * We succeeded in adding the credential to the slab.
+   */
+  NP_FFI_ADD_CREDENTIAL_TO_SLAB_RESULT_SUCCESS = 0,
+  /**
+   * The handle to the slab was actually invalid.
+   */
+  NP_FFI_ADD_CREDENTIAL_TO_SLAB_RESULT_INVALID_HANDLE = 1,
+};
+typedef uint8_t np_ffi_AddCredentialToSlabResult;
+
+/**
  * The possible boolean action types which can be present in an Actions data element
  */
 enum np_ffi_BooleanActionType {
@@ -51,17 +66,39 @@ typedef uint8_t np_ffi_BooleanActionType;
  */
 enum np_ffi_CreateCredentialBookResultKind {
   /**
-   * There was no space left to create a new credential book
-   */
-  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_KIND_NO_SPACE_LEFT = 0,
-  /**
    * We created a new credential book behind the given handle.
    * The associated payload may be obtained via
    * `CreateCredentialBookResult#into_success()`.
    */
-  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_KIND_SUCCESS = 1,
+  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_KIND_SUCCESS = 0,
+  /**
+   * There was no space left to create a new credential book
+   */
+  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_KIND_NO_SPACE_LEFT = 1,
+  /**
+   * The slab that we tried to create a credential-book from
+   * actually was an invalid handle.
+   */
+  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_KIND_INVALID_SLAB_HANDLE = 2,
 };
 typedef uint8_t np_ffi_CreateCredentialBookResultKind;
+
+/**
+ * Discriminant for `CreateCredentialSlabResult`
+ */
+enum np_ffi_CreateCredentialSlabResultKind {
+  /**
+   * There was no space left to create a new credential slab
+   */
+  NP_FFI_CREATE_CREDENTIAL_SLAB_RESULT_KIND_NO_SPACE_LEFT = 0,
+  /**
+   * We created a new credential slab behind the given handle.
+   * The associated payload may be obtained via
+   * `CreateCredentialSlabResult#into_success()`.
+   */
+  NP_FFI_CREATE_CREDENTIAL_SLAB_RESULT_KIND_SUCCESS = 1,
+};
+typedef uint8_t np_ffi_CreateCredentialSlabResultKind;
 
 /**
  * A result-type enum which tells the caller whether/not a deallocation
@@ -77,6 +114,24 @@ typedef enum {
    */
   NP_FFI_DEALLOCATE_RESULT_SUCCESS = 1,
 } np_ffi_DeallocateResult;
+
+/**
+ * Discriminant for `DecryptMetadataResult`.
+ */
+enum np_ffi_DecryptMetadataResultKind {
+  /**
+   * The attempt to decrypt the metadata of the associated credential succeeded
+   * The associated payload may be obtained via
+   * `DecryptMetadataResult#into_success`.
+   */
+  NP_FFI_DECRYPT_METADATA_RESULT_KIND_SUCCESS,
+  /**
+   * The attempt to decrypt the metadata failed, either the payload had no matching identity
+   * ie it was a public advertisement OR the decrypt attempt itself was unsuccessful
+   */
+  NP_FFI_DECRYPT_METADATA_RESULT_KIND_ERROR,
+};
+typedef uint8_t np_ffi_DecryptMetadataResultKind;
 
 /**
  * Discriminant for `DeserializeAdvertisementResult`.
@@ -122,16 +177,8 @@ enum np_ffi_DeserializedV0AdvertisementKind {
 typedef uint8_t np_ffi_DeserializedV0AdvertisementKind;
 
 /**
- * Represents deserialized information about the V0 identity utilized
- * by a deserialized V0 advertisement
- */
-typedef enum {
-  NP_FFI_DESERIALIZED_V0_IDENTITY_PLAINTEXT,
-  NP_FFI_DESERIALIZED_V0_IDENTITY_DECRYPTED,
-} np_ffi_DeserializedV0Identity;
-
-/**
- * Discriminant for `DeserializedV0Identity`.
+ * Discriminant for deserialized information about the V0
+ * identity utilized by a deserialized V0 advertisement.
  */
 enum np_ffi_DeserializedV0IdentityKind {
   /**
@@ -162,6 +209,34 @@ enum np_ffi_DeserializedV1IdentityKind {
 typedef uint8_t np_ffi_DeserializedV1IdentityKind;
 
 /**
+ * The DE type for an encrypted identity
+ */
+enum np_ffi_EncryptedIdentityType {
+  /**
+   * Identity for broadcasts to nearby devices with the same
+   * logged-in-account (for some account).
+   */
+  NP_FFI_ENCRYPTED_IDENTITY_TYPE_PRIVATE = 1,
+  /**
+   * Identity for broadcasts to nearby devices which this
+   * device has declared to trust.
+   */
+  NP_FFI_ENCRYPTED_IDENTITY_TYPE_TRUSTED = 2,
+  /**
+   * Identity for broadcasts to devices which have been provisioned
+   * offline with this device.
+   */
+  NP_FFI_ENCRYPTED_IDENTITY_TYPE_PROVISIONED = 4,
+};
+typedef uint8_t np_ffi_EncryptedIdentityType;
+
+enum np_ffi_GetMetadataBufferPartsResultKind {
+  NP_FFI_GET_METADATA_BUFFER_PARTS_RESULT_KIND_SUCCESS = 0,
+  NP_FFI_GET_METADATA_BUFFER_PARTS_RESULT_KIND_ERROR = 1,
+};
+typedef uint8_t np_ffi_GetMetadataBufferPartsResultKind;
+
+/**
  * Discriminant of `GetV0DEResult`.
  */
 enum np_ffi_GetV0DEResultKind {
@@ -182,6 +257,47 @@ enum np_ffi_GetV0DEResultKind {
 typedef uint8_t np_ffi_GetV0DEResultKind;
 
 /**
+ * Discriminant for `GetV0IdentityDetailsResult`
+ */
+enum np_ffi_GetV0IdentityDetailsResultKind {
+  /**
+   * The attempt to get the identity details
+   * for the advertisement failed, possibly
+   * due to the advertisement being a public
+   * advertisement, or the underlying
+   * advertisement has already been deallocated.
+   */
+  NP_FFI_GET_V0_IDENTITY_DETAILS_RESULT_KIND_ERROR = 0,
+  /**
+   * The attempt to get the identity details succeeded.
+   * The wrapped identity details may be obtained via
+   * `GetV0IdentityDetailsResult#into_success`.
+   */
+  NP_FFI_GET_V0_IDENTITY_DETAILS_RESULT_KIND_SUCCESS = 1,
+};
+typedef uint8_t np_ffi_GetV0IdentityDetailsResultKind;
+
+/**
+ * Discriminant for `GetV1DE16ByteSaltResult`.
+ */
+enum np_ffi_GetV1DE16ByteSaltResultKind {
+  /**
+   * The attempt to get the derived salt failed, possibly
+   * because the passed DE offset was invalid (==255),
+   * or because there was no salt included for the
+   * referenced advertisement section (i.e: it was
+   * a public advertisement section, or it was deallocated.)
+   */
+  NP_FFI_GET_V1DE16_BYTE_SALT_RESULT_KIND_ERROR = 0,
+  /**
+   * A 16-byte salt for the given DE offset was successfully
+   * derived.
+   */
+  NP_FFI_GET_V1DE16_BYTE_SALT_RESULT_KIND_SUCCESS = 1,
+};
+typedef uint8_t np_ffi_GetV1DE16ByteSaltResultKind;
+
+/**
  * Discriminant for the `GetV1DEResult` enum.
  */
 enum np_ffi_GetV1DEResultKind {
@@ -198,6 +314,27 @@ enum np_ffi_GetV1DEResultKind {
   NP_FFI_GET_V1DE_RESULT_KIND_SUCCESS = 1,
 };
 typedef uint8_t np_ffi_GetV1DEResultKind;
+
+/**
+ * Discriminant for `GetV1IdentityDetailsResult`
+ */
+enum np_ffi_GetV1IdentityDetailsResultKind {
+  /**
+   * The attempt to get the identity details
+   * for the section failed, possibly
+   * due to the section being a public
+   * section, or the underlying
+   * advertisement has already been deallocated.
+   */
+  NP_FFI_GET_V1_IDENTITY_DETAILS_RESULT_KIND_ERROR = 0,
+  /**
+   * The attempt to get the identity details succeeded.
+   * The wrapped identity details may be obtained via
+   * `GetV1IdentityDetailsResult#into_success`.
+   */
+  NP_FFI_GET_V1_IDENTITY_DETAILS_RESULT_KIND_SUCCESS = 1,
+};
+typedef uint8_t np_ffi_GetV1IdentityDetailsResultKind;
 
 /**
  * Discriminant for `GetV1SectionResult`
@@ -267,6 +404,23 @@ enum np_ffi_V0DataElementKind {
 typedef uint8_t np_ffi_V0DataElementKind;
 
 /**
+ * Information about the verification scheme used
+ * for verifying the integrity of the contents
+ * of a decrypted section.
+ */
+enum np_ffi_V1VerificationMode {
+  /**
+   * Message integrity code verification.
+   */
+  NP_FFI_V1_VERIFICATION_MODE_MIC = 0,
+  /**
+   * Signature verification.
+   */
+  NP_FFI_V1_VERIFICATION_MODE_SIGNATURE = 1,
+};
+typedef uint8_t np_ffi_V1VerificationMode;
+
+/**
  *A `#[repr(C)]` handle to a value of type `super::CredentialBookInternals`.
  */
 typedef struct {
@@ -277,8 +431,9 @@ typedef struct {
  * Result type for `create_credential_book`
  */
 enum np_ffi_CreateCredentialBookResult_Tag {
-  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_NO_SPACE_LEFT = 0,
-  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_SUCCESS = 1,
+  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_SUCCESS = 0,
+  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_NO_SPACE_LEFT = 1,
+  NP_FFI_CREATE_CREDENTIAL_BOOK_RESULT_INVALID_SLAB_HANDLE = 2,
 };
 typedef uint8_t np_ffi_CreateCredentialBookResult_Tag;
 
@@ -289,6 +444,125 @@ typedef union {
     np_ffi_CredentialBook success;
   };
 } np_ffi_CreateCredentialBookResult;
+
+/**
+ *A `#[repr(C)]` handle to a value of type `super::CredentialSlabInternals`.
+ */
+typedef struct {
+  uint64_t handle_id;
+} np_ffi_CredentialSlab;
+
+/**
+ * Result type for `create_credential_slab`
+ */
+typedef enum {
+  NP_FFI_CREATE_CREDENTIAL_SLAB_RESULT_NO_SPACE_LEFT,
+  NP_FFI_CREATE_CREDENTIAL_SLAB_RESULT_SUCCESS,
+} np_ffi_CreateCredentialSlabResult_Tag;
+
+typedef struct {
+  np_ffi_CreateCredentialSlabResult_Tag tag;
+  union {
+    struct {
+      np_ffi_CredentialSlab success;
+    };
+  };
+} np_ffi_CreateCredentialSlabResult;
+
+/**
+ * Cryptographic information about a particular V0 discovery credential
+ * necessary to match and decrypt encrypted V0 advertisements.
+ */
+typedef struct {
+  uint8_t key_seed[32];
+  uint8_t legacy_metadata_key_hmac[32];
+} np_ffi_V0DiscoveryCredential;
+
+/**
+ * A representation of a MatchedCredential which is passable across the FFI boundary
+ */
+typedef struct {
+  uint32_t cred_id;
+  const uint8_t *encrypted_metadata_bytes_buffer;
+  uintptr_t encrypted_metadata_bytes_len;
+} np_ffi_FfiMatchedCredential;
+
+/**
+ * Representation of a V0 credential that contains additional data to provide back to caller once it
+ * is matched. The credential_id can be used by the caller to correlate it back to the full
+ * credentials details.
+ */
+typedef struct {
+  np_ffi_V0DiscoveryCredential discovery_cred;
+  np_ffi_FfiMatchedCredential matched_cred;
+} np_ffi_V0MatchableCredential;
+
+/**
+ * Cryptographic information about a particular V1 discovery credential
+ * necessary to match and decrypt encrypted V1 advertisement sections.
+ */
+typedef struct {
+  uint8_t key_seed[32];
+  uint8_t expected_unsigned_metadata_key_hmac[32];
+  uint8_t expected_signed_metadata_key_hmac[32];
+  uint8_t pub_key[32];
+} np_ffi_V1DiscoveryCredential;
+
+/**
+ * Representation of a V1 credential that contains additional data to provide back to caller once it
+ * is matched. The credential_id can be used by the caller to correlate it back to the full
+ * credentials details.
+ */
+typedef struct {
+  np_ffi_V1DiscoveryCredential discovery_cred;
+  np_ffi_FfiMatchedCredential matched_cred;
+} np_ffi_V1MatchableCredential;
+
+/**
+ *A `#[repr(C)]` handle to a value of type `super::DecryptedMetadataInternals`.
+ */
+typedef struct {
+  uint64_t handle_id;
+} np_ffi_DecryptedMetadata;
+
+/**
+ * The result of decrypting metadata from either a V0Payload or DeserializedV1Section
+ */
+typedef enum {
+  NP_FFI_DECRYPT_METADATA_RESULT_SUCCESS,
+  NP_FFI_DECRYPT_METADATA_RESULT_ERROR,
+} np_ffi_DecryptMetadataResult_Tag;
+
+typedef struct {
+  np_ffi_DecryptMetadataResult_Tag tag;
+  union {
+    struct {
+      np_ffi_DecryptedMetadata success;
+    };
+  };
+} np_ffi_DecryptMetadataResult;
+
+/**
+ * The pointer and length of the decrypted metadata byte buffer
+ */
+typedef struct {
+  const uint8_t *ptr;
+  uintptr_t len;
+} np_ffi_MetadataBufferParts;
+
+typedef enum {
+  NP_FFI_GET_METADATA_BUFFER_PARTS_RESULT_SUCCESS,
+  NP_FFI_GET_METADATA_BUFFER_PARTS_RESULT_ERROR,
+} np_ffi_GetMetadataBufferPartsResult_Tag;
+
+typedef struct {
+  np_ffi_GetMetadataBufferPartsResult_Tag tag;
+  union {
+    struct {
+      np_ffi_MetadataBufferParts success;
+    };
+  };
+} np_ffi_GetMetadataBufferPartsResult;
 
 /**
  *A `#[repr(C)]` handle to a value of type `super::V0PayloadInternals`.
@@ -303,7 +577,7 @@ typedef struct {
 typedef struct {
   uint8_t num_des;
   np_ffi_V0Payload payload;
-  np_ffi_DeserializedV0Identity identity;
+  np_ffi_DeserializedV0IdentityKind identity_kind;
 } np_ffi_LegibleDeserializedV0Advertisement;
 
 /**
@@ -473,6 +747,49 @@ typedef struct {
 } np_ffi_GetV0DEResult;
 
 /**
+ * Information about the identity which matched a
+ * decrypted V0 advertisement.
+ */
+typedef struct {
+  /**
+   * The identity type (private/provisioned/trusted)
+   */
+  np_ffi_EncryptedIdentityType identity_type;
+  /**
+   * The ID of the credential which
+   * matched the deserialized adv
+   */
+  uint32_t cred_id;
+  /**
+   * The 14-byte legacy metadata key
+   */
+  uint8_t metadata_key[14];
+  /**
+   * The 2-byte advertisement salt
+   */
+  uint8_t salt[2];
+} np_ffi_DeserializedV0IdentityDetails;
+
+/**
+ * The result of attempting to get the identity details
+ * for a V0 advertisement via
+ * `DeserializedV0Advertisement#get_identity_details`.
+ */
+typedef enum {
+  NP_FFI_GET_V0_IDENTITY_DETAILS_RESULT_ERROR,
+  NP_FFI_GET_V0_IDENTITY_DETAILS_RESULT_SUCCESS,
+} np_ffi_GetV0IdentityDetailsResult_Tag;
+
+typedef struct {
+  np_ffi_GetV0IdentityDetailsResult_Tag tag;
+  union {
+    struct {
+      np_ffi_DeserializedV0IdentityDetails success;
+    };
+  };
+} np_ffi_GetV0IdentityDetailsResult;
+
+/**
  * Handle to a deserialized V1 section
  */
 typedef struct {
@@ -527,6 +844,10 @@ typedef struct {
  */
 typedef struct {
   /**
+   * The offset of this generic data-element.
+   */
+  uint8_t offset;
+  /**
    * The DE type code of this generic data-element.
    */
   np_ffi_V1DEType de_type;
@@ -576,6 +897,75 @@ typedef struct {
 } np_ffi_GetV1DEResult;
 
 /**
+ * Information about the identity which matched
+ * a decrypted V1 section.
+ */
+typedef struct {
+  /**
+   * The identity type (private/provisioned/trusted)
+   */
+  np_ffi_EncryptedIdentityType identity_type;
+  /**
+   * The verification mode (MIC/Signature) which
+   * was used to verify the decrypted adv contents.
+   */
+  np_ffi_V1VerificationMode verification_mode;
+  /**
+   * The ID of the credential which
+   * matched the deserialized section.
+   */
+  uint32_t cred_id;
+  /**
+   * The 16-byte metadata key.
+   */
+  uint8_t metadata_key[16];
+} np_ffi_DeserializedV1IdentityDetails;
+
+/**
+ * The result of attempting to get the identity details
+ * for a V1 advertisement section via
+ * `DeserializedV1Advertisement#get_identity_details`.
+ */
+typedef enum {
+  NP_FFI_GET_V1_IDENTITY_DETAILS_RESULT_ERROR,
+  NP_FFI_GET_V1_IDENTITY_DETAILS_RESULT_SUCCESS,
+} np_ffi_GetV1IdentityDetailsResult_Tag;
+
+typedef struct {
+  np_ffi_GetV1IdentityDetailsResult_Tag tag;
+  union {
+    struct {
+      np_ffi_DeserializedV1IdentityDetails success;
+    };
+  };
+} np_ffi_GetV1IdentityDetailsResult;
+
+/**
+ * A FFI safe wrapper of a fixed size array
+ */
+typedef struct {
+  uint8_t _0[16];
+} np_ffi_FixedSizeArray_16;
+
+/**
+ * The result of attempting to get a derived 16-byte salt
+ * for a given DE within a section.
+ */
+typedef enum {
+  NP_FFI_GET_V1DE16_BYTE_SALT_RESULT_ERROR,
+  NP_FFI_GET_V1DE16_BYTE_SALT_RESULT_SUCCESS,
+} np_ffi_GetV1DE16ByteSaltResult_Tag;
+
+typedef struct {
+  np_ffi_GetV1DE16ByteSaltResult_Tag tag;
+  union {
+    struct {
+      np_ffi_FixedSizeArray_16 success;
+    };
+  };
+} np_ffi_GetV1DE16ByteSaltResult;
+
+/**
  * Overrides the global panic handler to be used when NP C FFI calls panic.
  * This method will only have an effect on the global panic-handler
  * the first time it's called, and this method will return `true`
@@ -614,6 +1004,22 @@ bool np_ffi_global_config_panic_handler(void (*handler)(np_ffi_PanicReason));
  * API call.
  */
 void np_ffi_global_config_set_num_shards(uint8_t num_shards);
+
+/**
+ * Sets the maximum number of active handles to credential slabs
+ * which may be active at any one time.
+ * Default value: Max value.
+ * Max value: `u32::MAX - 1`.
+ *
+ * Useful for bounding the maximum memory used by the client application
+ * on credential slabs in constrained-memory environments.
+ *
+ * Setting this value will have no effect if the handle-maps for the
+ * API have already begun being used by the client code, and any
+ * values set will take effect upon the first usage of any API
+ * call utilizing credential slabs.
+ */
+void np_ffi_global_config_set_max_num_credential_slabs(uint32_t max_num_credential_slabs);
 
 /**
  * Sets the maximum number of active handles to credential books
@@ -666,9 +1072,10 @@ void np_ffi_global_config_set_max_num_deserialized_v0_advertisements(uint32_t ma
 void np_ffi_global_config_set_max_num_deserialized_v1_advertisements(uint32_t max_num_deserialized_v1_advertisements);
 
 /**
- * Allocates a new credential-book, returning a handle to the created object
+ * Allocates a new credential-book from the given slab, returning a handle
+ * to the created object. The slab will be deallocated by this call.
  */
-np_ffi_CreateCredentialBookResult np_ffi_create_credential_book(void);
+np_ffi_CreateCredentialBookResult np_ffi_create_credential_book_from_slab(np_ffi_CredentialSlab slab);
 
 /**
  * Gets the tag of a `CreateCredentialBookResult` tagged enum.
@@ -682,9 +1089,88 @@ np_ffi_CreateCredentialBookResultKind np_ffi_CreateCredentialBookResult_kind(np_
 np_ffi_CredentialBook np_ffi_CreateCredentialBookResult_into_SUCCESS(np_ffi_CreateCredentialBookResult result);
 
 /**
+ * Deallocates a credential-slab by its handle.
+ */
+np_ffi_DeallocateResult np_ffi_deallocate_credential_slab(np_ffi_CredentialSlab credential_slab);
+
+/**
  * Deallocates a credential-book by its handle
  */
 np_ffi_DeallocateResult np_ffi_deallocate_credential_book(np_ffi_CredentialBook credential_book);
+
+/**
+ * Allocates a new credential-slab, returning a handle to the created object
+ */
+np_ffi_CreateCredentialSlabResult np_ffi_create_credential_slab(void);
+
+/**
+ * Gets the tag of a `CreateCredentialSlabResult` tagged enum.
+ */
+np_ffi_CreateCredentialSlabResultKind np_ffi_CreateCredentialSlabResult_kind(np_ffi_CreateCredentialSlabResult result);
+
+/**
+ * Casts a `CreateCredentialSlabResult` to the `SUCCESS` variant, panicking in the
+ * case where the passed value is of a different enum variant.
+ */
+np_ffi_CredentialSlab np_ffi_CreateCredentialSlabResult_into_SUCCESS(np_ffi_CreateCredentialSlabResult result);
+
+/**
+ * Adds the given V0 discovery credential with some associated
+ * match-data to this credential slab.
+ *
+ * Safety: this is safe if the provided pointer points to a valid memory address
+ * which contains the correct len amount of bytes. The copy from the memory address isn't atomic,
+ * so concurrent modification of the array from another thread would cause undefined behavior.
+ */
+np_ffi_AddCredentialToSlabResult np_ffi_CredentialSlab_add_v0_credential(np_ffi_CredentialSlab credential_slab,
+                                                                         np_ffi_V0MatchableCredential v0_cred);
+
+/**
+ * Adds the given V1 discovery credential with some associated
+ * match-data to this credential slab.
+ *
+ * Safety: this is safe if the provided pointer points to a valid memory address
+ * which contains the correct len amount of bytes. The copy from the memory address isn't atomic,
+ * so concurrent modification of the array from another thread would cause undefined behavior.
+ */
+np_ffi_AddCredentialToSlabResult np_ffi_CredentialSlab_add_v1_credential(np_ffi_CredentialSlab credential_slab,
+                                                                         np_ffi_V1MatchableCredential v1_cred);
+
+/**
+ * Frees the underlying resources of the decrypted metadata buffer
+ */
+np_ffi_DeallocateResult np_ffi_deallocate_DecryptedMetadata(np_ffi_DecryptedMetadata metadata);
+
+/**
+ * Gets the tag of a `DecryptMetadataResult` tagged-union. On success the wrapped identity
+ * details may be obtained via `DecryptMetadataResult#into_success`.
+ */
+np_ffi_DecryptMetadataResultKind np_ffi_DecryptMetadataResult_kind(np_ffi_DecryptMetadataResult result);
+
+/**
+ * Casts a `DecryptMetadataResult` to the `Success` variant, panicking in the
+ * case where the passed value is of a different enum variant.
+ */
+np_ffi_DecryptedMetadata np_ffi_DecryptMetadataResult_into_SUCCESS(np_ffi_DecryptMetadataResult result);
+
+/**
+ * Gets the pointer and length of the heap allocated byte buffer of decrypted metadata
+ */
+np_ffi_GetMetadataBufferPartsResult np_ffi_DecryptedMetadata_get_metadata_buffer_parts(np_ffi_DecryptedMetadata metadata);
+
+/**
+ * Gets the tag of a `GetMetadataBufferPartsResult` tagged-union. On success the wrapped identity
+ * details may be obtained via `GetMetadataBufferPartsResult#into_success`.
+ */
+np_ffi_GetMetadataBufferPartsResultKind np_ffi_GetMetadataBufferPartsResult_kind(np_ffi_GetMetadataBufferPartsResult result);
+
+/**
+ * Casts a `GetMetadataBufferPartsResult` to the `Success` variant, panicking in the
+ * case where the passed value is of a different enum variant. This returns the pointer and length
+ * of the byte buffer containing the decrypted metadata.  There can be a data-race between attempts
+ * to access the contents of the buffer and attempts to free the handle from different threads.
+ */
+np_ffi_MetadataBufferParts np_ffi_GetMetadataBufferPartsResult_into_SUCCESS(np_ffi_GetMetadataBufferPartsResult result);
 
 /**
  * Attempts to deserialize an advertisement with the given service-data
@@ -751,9 +1237,9 @@ uint8_t np_ffi_LegibleDeserializedV0Advertisement_get_num_des(np_ffi_LegibleDese
 np_ffi_V0Payload np_ffi_LegibleDeserializedV0Advertisement_into_payload(np_ffi_LegibleDeserializedV0Advertisement adv);
 
 /**
- * Gets just the identity information associated with a `LegibleDeserializedV0Advertisement`.
+ * Gets just the identity kind associated with a `LegibleDeserializedV0Advertisement`.
  */
-np_ffi_DeserializedV0Identity np_ffi_LegibleDeserializedV0Advertisement_into_identity(np_ffi_LegibleDeserializedV0Advertisement adv);
+np_ffi_DeserializedV0IdentityKind np_ffi_LegibleDeserializedV0Advertisement_get_identity_kind(np_ffi_LegibleDeserializedV0Advertisement adv);
 
 /**
  * Deallocates any internal data of a `LegibleDeserializedV0Advertisement`
@@ -761,14 +1247,32 @@ np_ffi_DeserializedV0Identity np_ffi_LegibleDeserializedV0Advertisement_into_ide
 np_ffi_DeallocateResult np_ffi_deallocate_legible_v0_advertisement(np_ffi_LegibleDeserializedV0Advertisement adv);
 
 /**
- * Gets the tag of the `DeserializedV0Identity` tagged-union.
- */
-np_ffi_DeserializedV0IdentityKind np_ffi_DeserializedV0Identity_kind(np_ffi_DeserializedV0Identity identity);
-
-/**
  * Attempts to get the data-element with the given index in the passed v0 adv payload
  */
 np_ffi_GetV0DEResult np_ffi_V0Payload_get_de(np_ffi_V0Payload payload, uint8_t index);
+
+/**
+ * Attempts to decrypt the metadata for the matched credential for this V0 payload (if any)
+ */
+np_ffi_DecryptMetadataResult np_ffi_V0Payload_decrypt_metadata(np_ffi_V0Payload payload);
+
+/**
+ * Gets the identity details for this V0 payload, or returns an error if this payload does not have
+ * any associated identity (public advertisement)
+ */
+np_ffi_GetV0IdentityDetailsResult np_ffi_V0Payload_get_identity_details(np_ffi_V0Payload payload);
+
+/**
+ * Gets the tag of a `GetV0IdentityDetailsResult` tagged-union. On success the wrapped identity
+ * details may be obtained via `GetV0IdentityDetailsResult#into_success`.
+ */
+np_ffi_GetV0IdentityDetailsResultKind np_ffi_GetV0IdentityDetailsResult_kind(np_ffi_GetV0IdentityDetailsResult result);
+
+/**
+ * Casts a `GetV0IdentityDetailsResult` to the `Success` variant, panicking in the
+ * case where the passed value is of a different enum variant.
+ */
+np_ffi_DeserializedV0IdentityDetails np_ffi_GetV0IdentityDetailsResult_into_SUCCESS(np_ffi_GetV0IdentityDetailsResult result);
 
 /**
  * Deallocates any internal data of a `V0Payload`
@@ -867,12 +1371,55 @@ np_ffi_GetV1DEResult np_ffi_DeserializedV1Section_get_de(np_ffi_DeserializedV1Se
                                                          uint8_t de_index);
 
 /**
+ * Gets the identity details used to decrypt this V1 section, or returns an error if this payload
+ * does not have any associated identity (public advertisement)
+ */
+np_ffi_GetV1IdentityDetailsResult np_ffi_DeserializedV1Section_get_identity_details(np_ffi_DeserializedV1Section section);
+
+/**
+ * Gets the tag of a `GetV1IdentityDetailsResult` tagged-union. On success the wrapped identity
+ * details may be obtained via `GetV0IdentityDetailsResult#into_success`.
+ */
+np_ffi_GetV1IdentityDetailsResultKind np_ffi_GetV1IdentityDetailsResult_kind(np_ffi_GetV1IdentityDetailsResult result);
+
+/**
+ * Casts a `GetV1IdentityDetailsResult` to the `Success` variant, panicking in the
+ * case where the passed value is of a different enum variant.
+ */
+np_ffi_DeserializedV1IdentityDetails np_ffi_GetV1IdentityDetailsResult_into_SUCCESS(np_ffi_GetV1IdentityDetailsResult result);
+
+/**
+ * Attempts to decrypt the metadata for the matched credential for this V0 payload (if any)
+ */
+np_ffi_DecryptMetadataResult np_ffi_DeserializedV1Section_decrypt_metadata(np_ffi_DeserializedV1Section section);
+
+/**
+ * Attempts to derive a 16-byte DE salt for a DE in this section with the given DE offset. This
+ * operation may fail if the passed offset is 255 (causes overflow) or if the section
+ * is leveraging a public identity, and hence, doesn't have an associated salt.
+ */
+np_ffi_GetV1DE16ByteSaltResult np_ffi_DeserializedV1Section_derive_16_byte_salt_for_offset(np_ffi_DeserializedV1Section section,
+                                                                                           uint8_t offset);
+
+/**
+ * Gets the tag of a `GetV1DE16ByteSaltResult` tagged-union. On success the wrapped identity
+ * details may be obtained via `GetV1DE16ByteSaltResult#into_success`.
+ */
+np_ffi_GetV1DE16ByteSaltResultKind np_ffi_GetV1DE16ByteSaltResult_kind(np_ffi_GetV1DE16ByteSaltResult result);
+
+/**
+ * Casts a `GetV1DE16ByteSaltResult` to the `Success` variant, panicking in the
+ * case where the passed value is of a different enum variant.
+ */
+np_ffi_FixedSizeArray_16 np_ffi_GetV1DE16ByteSaltResult_into_SUCCESS(np_ffi_GetV1DE16ByteSaltResult result);
+
+/**
  * Gets the tag of the `GetV1DEResult` tagged-union.
  */
 np_ffi_GetV1DEResultKind np_ffi_GetV1DEResult_kind(np_ffi_GetV1DEResult result);
 
 /**
- * Casts a `GetV1DEResult` to the `Success` vartiant, panicking in the
+ * Casts a `GetV1DEResult` to the `Success` variant, panicking in the
  * case where the passed value is of a different enum variant.
  */
 np_ffi_V1DataElement np_ffi_GetV1DEResult_into_SUCCESS(np_ffi_GetV1DEResult result);

@@ -16,6 +16,7 @@ use crate::{panic, unwrap, PanicReason};
 use np_ffi_core::common::DeallocateResult;
 use np_ffi_core::deserialize::v0::v0_payload::V0Payload;
 use np_ffi_core::deserialize::v0::*;
+use np_ffi_core::deserialize::DecryptMetadataResult;
 use np_ffi_core::utils::FfiEnum;
 
 /// Gets the tag of a `DeserializedV0Advertisement` tagged-union.
@@ -49,15 +50,15 @@ pub extern "C" fn np_ffi_LegibleDeserializedV0Advertisement_get_num_des(
 pub extern "C" fn np_ffi_LegibleDeserializedV0Advertisement_into_payload(
     adv: LegibleDeserializedV0Advertisement,
 ) -> V0Payload {
-    adv.into_payload()
+    adv.payload()
 }
 
-/// Gets just the identity information associated with a `LegibleDeserializedV0Advertisement`.
+/// Gets just the identity kind associated with a `LegibleDeserializedV0Advertisement`.
 #[no_mangle]
-pub extern "C" fn np_ffi_LegibleDeserializedV0Advertisement_into_identity(
+pub extern "C" fn np_ffi_LegibleDeserializedV0Advertisement_get_identity_kind(
     adv: LegibleDeserializedV0Advertisement,
-) -> DeserializedV0Identity {
-    adv.into_identity()
+) -> DeserializedV0IdentityKind {
+    adv.identity_kind()
 }
 
 /// Deallocates any internal data of a `LegibleDeserializedV0Advertisement`
@@ -68,18 +69,43 @@ pub extern "C" fn np_ffi_deallocate_legible_v0_advertisement(
     adv.deallocate()
 }
 
-/// Gets the tag of the `DeserializedV0Identity` tagged-union.
-#[no_mangle]
-pub extern "C" fn np_ffi_DeserializedV0Identity_kind(
-    identity: DeserializedV0Identity,
-) -> DeserializedV0IdentityKind {
-    identity.kind()
-}
-
 /// Attempts to get the data-element with the given index in the passed v0 adv payload
 #[no_mangle]
 pub extern "C" fn np_ffi_V0Payload_get_de(payload: V0Payload, index: u8) -> GetV0DEResult {
     payload.get_de(index)
+}
+
+/// Attempts to decrypt the metadata for the matched credential for this V0 payload (if any)
+#[no_mangle]
+pub extern "C" fn np_ffi_V0Payload_decrypt_metadata(payload: V0Payload) -> DecryptMetadataResult {
+    payload.decrypt_metadata()
+}
+
+/// Gets the identity details for this V0 payload, or returns an error if this payload does not have
+/// any associated identity (public advertisement)
+#[no_mangle]
+pub extern "C" fn np_ffi_V0Payload_get_identity_details(
+    payload: V0Payload,
+) -> GetV0IdentityDetailsResult {
+    payload.get_identity_details()
+}
+
+/// Gets the tag of a `GetV0IdentityDetailsResult` tagged-union. On success the wrapped identity
+/// details may be obtained via `GetV0IdentityDetailsResult#into_success`.
+#[no_mangle]
+pub extern "C" fn np_ffi_GetV0IdentityDetailsResult_kind(
+    result: GetV0IdentityDetailsResult,
+) -> GetV0IdentityDetailsResultKind {
+    result.kind()
+}
+
+/// Casts a `GetV0IdentityDetailsResult` to the `Success` variant, panicking in the
+/// case where the passed value is of a different enum variant.
+#[no_mangle]
+pub extern "C" fn np_ffi_GetV0IdentityDetailsResult_into_SUCCESS(
+    result: GetV0IdentityDetailsResult,
+) -> DeserializedV0IdentityDetails {
+    unwrap(result.into_success(), PanicReason::EnumCastFailed)
 }
 
 /// Deallocates any internal data of a `V0Payload`

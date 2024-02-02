@@ -13,28 +13,16 @@
 // limitations under the License.
 
 //! NP Rust C FFI
-// TODO: Remove usage of `lang_items` when ffi is no longer alloc
-#![allow(internal_features)]
-#![feature(lang_items)]
-#![cfg_attr(not(test), no_std)]
-#![allow(dead_code)]
-extern crate alloc;
-extern crate core;
 
 pub mod credentials;
 pub mod deserialize;
 
-#[global_allocator]
-static ALLOCATOR: libc_alloc::LibcAlloc = libc_alloc::LibcAlloc;
-
-extern crate panic_abort;
-
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
+use lock_adapter::std::RwLock;
+use lock_adapter::RwLock as _;
 
 /// Structure for categorized reasons for why a NP C FFI call may
 /// be panicking.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum PanicReason {
     /// Some enum cast to a variant failed. Utilized
@@ -90,27 +78,16 @@ impl PanicHandler {
         }
         Self::system_handler(panic_reason)
     }
-    #[cfg(feature = "std")]
+
     fn system_handler(panic_reason: PanicReason) -> ! {
-        eprintln!("NP FFI Panicked: {:?}", panic_reason);
+        std::eprintln!("NP FFI Panicked: {:?}", panic_reason);
         let backtrace = std::backtrace::Backtrace::capture();
-        eprintln!("Stack trace: {}", backtrace);
-        std::process::abort!();
-    }
-    #[cfg(not(feature = "std"))]
-    #[allow(clippy::empty_loop)]
-    fn system_handler(_: PanicReason) -> ! {
-        // Looping is the only platform-independent thing
-        // that we can really do in this scenario.
-        // (Even clippy's explanation for the empty-loop
-        // lint mentions platform-specific intrinsics
-        // as being the only true way to avoid this
-        // in a no_std environment.)
-        loop {}
+        std::eprintln!("Stack trace: {}", backtrace);
+        std::process::abort()
     }
 }
 
-static PANIC_HANDLER: spin::RwLock<PanicHandler> = spin::RwLock::new(PanicHandler::new());
+static PANIC_HANDLER: RwLock<PanicHandler> = RwLock::new(PanicHandler::new());
 
 pub(crate) fn panic(reason: PanicReason) -> ! {
     PANIC_HANDLER.read().panic(reason)
@@ -166,6 +143,23 @@ pub extern "C" fn np_ffi_global_config_panic_handler(
 #[no_mangle]
 pub extern "C" fn np_ffi_global_config_set_num_shards(num_shards: u8) {
     np_ffi_core::common::global_config_set_num_shards(num_shards)
+}
+
+/// Sets the maximum number of active handles to credential slabs
+/// which may be active at any one time.
+/// Default value: Max value.
+/// Max value: `u32::MAX - 1`.
+///
+/// Useful for bounding the maximum memory used by the client application
+/// on credential slabs in constrained-memory environments.
+///
+/// Setting this value will have no effect if the handle-maps for the
+/// API have already begun being used by the client code, and any
+/// values set will take effect upon the first usage of any API
+/// call utilizing credential slabs.
+#[no_mangle]
+pub extern "C" fn np_ffi_global_config_set_max_num_credential_slabs(max_num_credential_slabs: u32) {
+    np_ffi_core::common::global_config_set_max_num_credential_slabs(max_num_credential_slabs)
 }
 
 /// Sets the maximum number of active handles to credential books
