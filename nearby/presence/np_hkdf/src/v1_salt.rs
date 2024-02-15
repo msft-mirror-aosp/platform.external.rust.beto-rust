@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Salt used in a V1 advertisement.
-use crate::np_hkdf;
+use crate::np_salt_hkdf;
 use core::fmt;
 use crypto_provider::hkdf::Hkdf;
 use crypto_provider::CryptoProvider;
@@ -45,7 +45,7 @@ impl<C: CryptoProvider> V1Salt<C> {
                 &[
                     b"V1 derived salt",
                     &de.and_then(|d| d.offset.checked_add(1))
-                        .and_then(|o| o.try_into().ok())
+                        .map(|o| o.into())
                         .unwrap_or(0_u32)
                         .to_be_bytes(),
                 ],
@@ -60,6 +60,11 @@ impl<C: CryptoProvider> V1Salt<C> {
         self.data.as_slice()
     }
 
+    /// Returns the salt bytes as an array
+    pub fn into_array(self) -> [u8; 16] {
+        self.data
+    }
+
     /// Returns the salt bytes as a reference to an array
     pub fn as_array_ref(&self) -> &[u8; 16] {
         &self.data
@@ -68,10 +73,7 @@ impl<C: CryptoProvider> V1Salt<C> {
 
 impl<C: CryptoProvider> From<[u8; 16]> for V1Salt<C> {
     fn from(arr: [u8; 16]) -> Self {
-        Self {
-            data: arr,
-            hkdf: np_hkdf::<C>(&arr),
-        }
+        Self { data: arr, hkdf: np_salt_hkdf::<C>(&arr) }
     }
 }
 
@@ -94,7 +96,7 @@ impl<C: CryptoProvider> fmt::Debug for V1Salt<C> {
 #[derive(PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
 pub struct DataElementOffset {
     /// 0-based offset of the DE in the advertisement
-    offset: usize,
+    offset: u8,
 }
 
 impl DataElementOffset {
@@ -102,7 +104,7 @@ impl DataElementOffset {
     pub const ZERO: DataElementOffset = Self { offset: 0 };
 
     /// Returns the offset as a usize
-    pub fn as_usize(&self) -> usize {
+    pub fn as_u8(&self) -> u8 {
         self.offset
     }
 
@@ -110,14 +112,12 @@ impl DataElementOffset {
     ///
     /// Does not handle overflow as there can't be more than 2^8 DEs in a section.
     pub const fn incremented(&self) -> Self {
-        Self {
-            offset: self.offset + 1,
-        }
+        Self { offset: self.offset + 1 }
     }
 }
 
-impl From<usize> for DataElementOffset {
-    fn from(num: usize) -> Self {
+impl From<u8> for DataElementOffset {
+    fn from(num: u8) -> Self {
         Self { offset: num }
     }
 }

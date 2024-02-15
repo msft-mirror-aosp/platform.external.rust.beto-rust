@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(missing_docs, unused_results, clippy::indexing_slicing, clippy::unwrap_used)]
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
@@ -35,22 +37,19 @@ pub fn ldt_scan(c: &mut Criterion) {
             );
             b.iter(|| black_box(state.scan()));
         });
-        c.bench_function(
-            &format!("LDT-XTS-AES-128/SHA-256/XOR pad/{num_keys} keys"),
-            |b| {
-                let mut state = build_bench_state::<_, sha2::Sha256>(
-                    ldt_factory::<
-                        16,
-                        XtsAes128<RustCrypto>,
-                        Swap,
-                        XorPadder<{ crypto_provider::aes::BLOCK_SIZE }>,
-                    >(),
-                    num_keys,
-                    24,
-                );
-                b.iter(|| black_box(state.scan()));
-            },
-        );
+        c.bench_function(&format!("LDT-XTS-AES-128/SHA-256/XOR pad/{num_keys} keys"), |b| {
+            let mut state = build_bench_state::<_, sha2::Sha256>(
+                ldt_factory::<
+                    16,
+                    XtsAes128<RustCrypto>,
+                    Swap,
+                    XorPadder<{ crypto_provider::aes::BLOCK_SIZE }>,
+                >(),
+                num_keys,
+                24,
+            );
+            b.iter(|| black_box(state.scan()));
+        });
         c.bench_function(&format!("LDT-XTS-AES-256/SHA-256/{num_keys} keys",), |b| {
             let mut state = build_bench_state::<_, sha2::Sha256>(
                 ldt_factory::<16, XtsAes256<RustCrypto>, Swap, DefaultPadder>(),
@@ -63,28 +62,22 @@ pub fn ldt_scan(c: &mut Criterion) {
             let mut state = build_bench_state::<_, sha2::Sha256>(AesCtrFactory {}, num_keys, 24);
             b.iter(|| black_box(state.scan()));
         });
-        c.bench_function(
-            &format!("LDT-XTS-AES-128/BLAKE2b-512/{num_keys} keys",),
-            |b| {
-                let mut state = build_bench_state::<_, blake2::Blake2b512>(
-                    ldt_factory::<16, XtsAes128<RustCrypto>, Swap, DefaultPadder>(),
-                    num_keys,
-                    24,
-                );
-                b.iter(|| black_box(state.scan()));
-            },
-        );
-        c.bench_function(
-            &format!("LDT-XTS-AES-128/BLAKE2s-256/{num_keys} keys",),
-            |b| {
-                let mut state = build_bench_state::<_, blake2::Blake2s256>(
-                    ldt_factory::<16, XtsAes128<RustCrypto>, Swap, DefaultPadder>(),
-                    num_keys,
-                    24,
-                );
-                b.iter(|| black_box(state.scan()));
-            },
-        );
+        c.bench_function(&format!("LDT-XTS-AES-128/BLAKE2b-512/{num_keys} keys",), |b| {
+            let mut state = build_bench_state::<_, blake2::Blake2b512>(
+                ldt_factory::<16, XtsAes128<RustCrypto>, Swap, DefaultPadder>(),
+                num_keys,
+                24,
+            );
+            b.iter(|| black_box(state.scan()));
+        });
+        c.bench_function(&format!("LDT-XTS-AES-128/BLAKE2s-256/{num_keys} keys",), |b| {
+            let mut state = build_bench_state::<_, blake2::Blake2s256>(
+                ldt_factory::<16, XtsAes128<RustCrypto>, Swap, DefaultPadder>(),
+                num_keys,
+                24,
+            );
+            b.iter(|| black_box(state.scan()));
+        });
     }
 }
 
@@ -156,10 +149,7 @@ fn random_ldt_scenario<C: CryptoProvider, F: ScanCipherFactory, D: ScanDigest>(
     hasher.update(&plaintext[..MATCH_LEN]);
     hasher.finalize_and_reset(&mut plaintext_prefix_hash);
 
-    ScanScenario {
-        cipher,
-        plaintext_prefix_hash,
-    }
+    ScanScenario { cipher, plaintext_prefix_hash }
 }
 
 fn random_vec<C: CryptoProvider>(rng: &mut C::CryptoRng, len: usize) -> Vec<u8> {
@@ -248,7 +238,7 @@ trait RandomPadder {
 
 impl RandomPadder for DefaultPadder {
     fn generate<C: CryptoProvider>(_rng: &mut C::CryptoRng) -> Self {
-        Self::default()
+        Self
     }
 }
 

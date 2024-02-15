@@ -25,11 +25,7 @@ pub struct Hkdf<H: OpenSslHash> {
 
 impl<H: OpenSslHash> crypto_provider::hkdf::Hkdf for Hkdf<H> {
     fn new(salt: Option<&[u8]>, ikm: &[u8]) -> Self {
-        Self {
-            _marker: Default::default(),
-            salt: salt.map(Vec::from),
-            ikm: Vec::from(ikm),
-        }
+        Self { _marker: Default::default(), salt: salt.map(Vec::from), ikm: Vec::from(ikm) }
     }
 
     fn expand_multi_info(
@@ -46,13 +42,11 @@ impl<H: OpenSslHash> crypto_provider::hkdf::Hkdf for Hkdf<H> {
         let md = H::get_md();
         ctx.derive_init().expect("hkdf derive init should not fail");
         ctx.set_hkdf_md(md).expect("hkdf set md should not fail");
-        self.salt
-            .as_ref()
-            .map(|salt| ctx.set_hkdf_salt(salt.as_slice()));
-        ctx.set_hkdf_key(self.ikm.as_slice())
-            .expect("should be able to set key");
-        ctx.add_hkdf_info(&info_components.concat())
-            .expect("should be able to add info");
+        let _ = self.salt.as_ref().map(|salt| {
+            ctx.set_hkdf_salt(salt.as_slice()).expect("setting the salt is infallible")
+        });
+        ctx.set_hkdf_key(self.ikm.as_slice()).expect("should be able to set key");
+        ctx.add_hkdf_info(&info_components.concat()).expect("should be able to add info");
         ctx.derive(Some(okm)).map_err(|_| InvalidLength).map(|_| ())
     }
 
@@ -65,7 +59,7 @@ impl<H: OpenSslHash> crypto_provider::hkdf::Hkdf for Hkdf<H> {
 mod tests {
     use crate::Openssl;
     use core::marker::PhantomData;
-    use crypto_provider::hkdf::testing::*;
+    use crypto_provider_test::hkdf::*;
 
     #[apply(hkdf_test_cases)]
     fn hkdf_tests(testcase: CryptoProviderTestCase<Openssl>) {

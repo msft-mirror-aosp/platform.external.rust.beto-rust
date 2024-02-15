@@ -12,6 +12,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#![allow(clippy::expect_used)]
+// TODO: remove this and convert all unwraps to expects
+#![allow(clippy::unwrap_used)]
 
 pub(crate) use crate::proto_adapter::{
     CipherCommitment, ClientFinished, ClientInit, GenericPublicKey, HandshakeCipher,
@@ -89,7 +92,7 @@ impl WireCompatibilityLayer for HandshakeImplementation {
                 HandshakeCipher::P256Sha512 => {
                     let p256_key =
                         <C::P256 as P256EcdhProvider>::PublicKey::from_bytes(key.as_slice())
-                            .unwrap();
+                            .expect("");
                     let (x, y) = p256_key.to_affine_coordinates().unwrap();
                     let bigboi_x = num_bigint::BigInt::from_biguint(
                         num_bigint::Sign::Plus,
@@ -133,7 +136,7 @@ impl WireCompatibilityLayer for HandshakeImplementation {
                 match public_key {
                     GenericPublicKey::Ec256(key) => {
                         debug_assert_eq!(cipher, HandshakeCipher::P256Sha512);
-                        Some(key.to_bytes())
+                        Some(key.to_bytes().to_vec())
                     }
                 }
             }
@@ -158,11 +161,7 @@ impl<C: CryptoProvider> Ukey2ServerStage1<C> {
         next_protocols: hash_set::HashSet<String>,
         handshake_impl: HandshakeImplementation,
     ) -> Self {
-        Self {
-            next_protocols,
-            handshake_impl,
-            _marker: PhantomData,
-        }
+        Self { next_protocols, handshake_impl, _marker: PhantomData }
     }
 
     pub(crate) fn handle_client_init<R: rand::Rng + rand::CryptoRng>(
@@ -171,7 +170,7 @@ impl<C: CryptoProvider> Ukey2ServerStage1<C> {
         client_init: ClientInit,
         client_init_msg_bytes: Vec<u8>,
     ) -> Result<Ukey2ServerStage2<C>, ClientInitError> {
-        if client_init.version() != &1 {
+        if client_init.version() != 1 {
             return Err(ClientInitError::BadVersion);
         }
 
@@ -192,7 +191,7 @@ impl<C: CryptoProvider> Ukey2ServerStage1<C> {
             // proto enum uses the priority as the numeric value
             .max_by_key(|c| c.cipher().as_proto() as i32)
             .ok_or(ClientInitError::BadHandshakeCipher)?;
-        match *commitment.cipher() {
+        match commitment.cipher() {
             // pick in priority order
             HandshakeCipher::Curve25519Sha512 => {
                 let secret = ServerKeyPair::Curve25519(
@@ -271,9 +270,12 @@ impl<C: CryptoProvider> Ukey2ServerStage2<C> {
         server_init.set_random(random.to_vec());
         server_init.set_handshake_cipher(commitment.cipher().as_proto());
         server_init.set_public_key(match &key_pair {
-            ServerKeyPair::Curve25519(es) => es.public_key_bytes(),
+            ServerKeyPair::Curve25519(es) => es.public_key_bytes().as_ref().to_vec(),
             ServerKeyPair::P256(es) => handshake_impl
-                .encode_public_key::<C>(es.public_key_bytes(), HandshakeCipher::P256Sha512)
+                .encode_public_key::<C>(
+                    es.public_key_bytes().as_ref().to_vec(),
+                    HandshakeCipher::P256Sha512,
+                )
                 .unwrap(),
         });
 
@@ -305,9 +307,8 @@ impl<C: CryptoProvider> Ukey2ServerStage2<C> {
             let shared_secret_bytes = match self.key_pair {
                 ServerKeyPair::Curve25519(es) => {
                     let buf = msg.public_key.into_iter().collect::<Vec<u8>>();
-                    let public_key: [u8; 32] = (&buf[..])
-                        .try_into()
-                        .map_err(|_| ClientFinishedError::BadEd25519Key)?;
+                    let public_key: [u8; 32] =
+                        (&buf[..]).try_into().map_err(|_| ClientFinishedError::BadEd25519Key)?;
                     es.diffie_hellman(
                         &<C::X25519 as EcdhProvider<X25519>>::PublicKey::from_bytes(&public_key)
                             .map_err(|_| ClientFinishedError::BadEd25519Key)?,
@@ -397,7 +398,7 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
             );
         let curve25519_client_finished_bytes = {
             let client_finished = ukey::Ukey2ClientFinished {
-                public_key: Some(curve25519_secret.public_key_bytes()),
+                public_key: Some(curve25519_secret.public_key_bytes().as_ref().to_vec()),
                 ..Default::default()
             };
             client_finished.to_wrapped_msg().write_to_bytes().unwrap()
@@ -416,7 +417,7 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
                 public_key: Some(
                     handshake_impl
                         .encode_public_key::<C>(
-                            p256_secret.public_key_bytes(),
+                            p256_secret.public_key_bytes().as_ref().to_vec(),
                             HandshakeCipher::P256Sha512,
                         )
                         .expect("Output of p256_secret.public_key_bytes should always be valid input for encode_public_key"),
@@ -476,7 +477,7 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
         server_init: ServerInit,
         server_init_bytes: Vec<u8>,
     ) -> Result<Ukey2Client, ServerInitError> {
-        if server_init.version() != &1 {
+        if server_init.version() != 1 {
             return Err(ServerInitError::BadVersion);
         }
 
@@ -485,7 +486,7 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
             .commitment_ciphers
             .iter()
             .fold(None, |accum, c| {
-                if server_init.handshake_cipher() == c {
+                if server_init.handshake_cipher() == *c {
                     match accum {
                         None => Some(c),
                         Some(_) => accum,
@@ -515,10 +516,8 @@ impl<C: CryptoProvider> Ukey2ClientStage1<C> {
                 (shared_secret_bytes, self.p256_client_finished_bytes)
             }
             HandshakeCipher::Curve25519Sha512 => {
-                let pub_key: [u8; 32] = server_init
-                    .public_key
-                    .try_into()
-                    .map_err(|_| ServerInitError::BadPublicKey)?;
+                let pub_key: [u8; 32] =
+                    server_init.public_key.try_into().map_err(|_| ServerInitError::BadPublicKey)?;
                 (
                     self.curve25519_secret
                         .diffie_hellman(
@@ -607,12 +606,7 @@ impl CompletedHandshake {
         shared_secret: Vec<u8>,
         next_protocol: String,
     ) -> Self {
-        Self {
-            client_init_bytes,
-            server_init_bytes,
-            shared_secret,
-            next_protocol,
-        }
+        Self { client_init_bytes, server_init_bytes, shared_secret, next_protocol }
     }
 
     /// Returns an HKDF for the UKEY2 `AUTH_STRING`.
@@ -656,16 +650,10 @@ impl<'a, C: CryptoProvider> HandshakeHkdf<'a, C> {
 
     /// Returns `None` if the provided `buf` has size > 255 * 512 bytes.
     pub fn derive_slice(&self, buf: &mut [u8]) -> Option<()> {
-        self.hkdf
-            .expand_multi_info(&[self.client_init_bytes, self.server_init_bytes], buf)
-            .ok()
+        self.hkdf.expand_multi_info(&[self.client_init_bytes, self.server_init_bytes], buf).ok()
     }
 
     fn new(client_init_bytes: &'a [u8], server_init_bytes: &'a [u8], hkdf: C::HkdfSha256) -> Self {
-        Self {
-            client_init_bytes,
-            server_init_bytes,
-            hkdf,
-        }
+        Self { client_init_bytes, server_init_bytes, hkdf }
     }
 }

@@ -27,6 +27,7 @@ plugins {
     // Apply the java-library plugin for API and implementation separation.
     `java-library`
     kotlin("jvm") version "1.8.0"
+    id("me.champeau.jmh") version "0.7.1"
 }
 
 repositories {
@@ -43,13 +44,18 @@ dependencies {
     implementation("com.google.code.findbugs:jsr305:3.0.2")
     implementation(kotlin("stdlib"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.9.2")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.2")
 }
 
 kotlin {
     jvmToolchain(17)
 }
 
+tasks.jmh {
+    jvmArgs.value(mutableListOf("-Djava.library.path=$projectDir/../../../../target/release"))
+}
+
 tasks.test {
     useJUnitPlatform()
-    jvmArgs = mutableListOf("-Djava.library.path=../../../../target/debug")
+    jvmArgs = mutableListOf("-Djava.library.path=$projectDir/../../../../target/debug")
 }

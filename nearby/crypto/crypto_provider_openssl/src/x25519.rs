@@ -30,14 +30,15 @@ impl PartialEq for X25519PublicKey {
 
 impl PublicKey<X25519> for X25519PublicKey {
     type Error = ErrorStack;
+    type EncodedPublicKey = [u8; 32];
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let key = PKey::public_key_from_raw_bytes(bytes, Id::X25519)?;
         Ok(X25519PublicKey(key))
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
-        self.0.raw_public_key().unwrap()
+    fn to_bytes(&self) -> Self::EncodedPublicKey {
+        self.0.raw_public_key().unwrap().try_into().unwrap()
     }
 }
 
@@ -48,14 +49,15 @@ impl EphemeralSecret<X25519> for X25519PrivateKey {
     type Impl = X25519Ecdh;
     type Error = ErrorStack;
     type Rng = ();
+    type EncodedPublicKey = [u8; 32];
 
     fn generate_random(_rng: &mut Self::Rng) -> Self {
         let private_key = openssl::pkey::PKey::generate_x25519().unwrap();
         Self(private_key)
     }
 
-    fn public_key_bytes(&self) -> Vec<u8> {
-        self.0.raw_public_key().unwrap()
+    fn public_key_bytes(&self) -> Self::EncodedPublicKey {
+        self.0.raw_public_key().unwrap().try_into().unwrap()
     }
 
     fn diffie_hellman(
@@ -72,7 +74,7 @@ impl EphemeralSecret<X25519> for X25519PrivateKey {
 }
 
 #[cfg(test)]
-impl crypto_provider::elliptic_curve::EphemeralSecretForTesting<X25519> for X25519PrivateKey {
+impl crypto_provider_test::elliptic_curve::EphemeralSecretForTesting<X25519> for X25519PrivateKey {
     fn from_private_components(
         private_bytes: &[u8; 32],
         _public_key: &<Self::Impl as EcdhProvider<X25519>>::PublicKey,
@@ -93,7 +95,7 @@ impl EcdhProvider<X25519> for X25519Ecdh {
 #[cfg(test)]
 mod tests {
     use core::marker::PhantomData;
-    use crypto_provider::x25519::testing::*;
+    use crypto_provider_test::x25519::*;
 
     use super::X25519Ecdh;
 

@@ -12,28 +12,76 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.14)
 
-project(ldt)
+project(NearbyProtocol)
 
-set(CMAKE_C_FLAGS_DEBUG "-g -DDEBUG")
-set(CMAKE_CXX_FLAGS_DEBUG "-g -DDEBUG")
+# required for designated initializers on MSVC
+set(CMAKE_CXX_STANDARD 20)
 
-add_compile_options(-Wall -g -O1 -Wno-deprecated -Wno-deprecated-declarations)
+# root directory of repo
+set(BETO_CORE_ROOT ${CMAKE_SOURCE_DIR}/../..)
 
-# we need at least version 3.0.6 for the core.h header used in the fuzzers
-find_package(OpenSSL 3.0.5 REQUIRED)
-if ( OPENSSL_FOUND )
+# location of external third_party dependencies
+set(THIRD_PARTY_DIR ${BETO_CORE_ROOT}/third_party)
+
+set(CMAKE_C_FLAGS_DEBUG "-DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-DDEBUG")
+if (UNIX)
+    set(CMAKE_C_FLAGS_DEBUG "-g ${CMAKE_C_FLAGS_DEBUG}")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g ${CMAKE_C_FLAGS_DEBUG}")
+endif ()
+
+find_package(OpenSSL REQUIRED)
+if (OPENSSL_FOUND)
     message(STATUS "OpenSSL Found: ${OPENSSL_VERSION}")
     message(STATUS "OpenSSL Include: ${OPENSSL_INCLUDE_DIR}")
     message(STATUS "OpenSSL Libraries: ${OPENSSL_LIBRARIES}")
+endif ()
+
+if (MSVC)
+    add_compile_options(-W4 -O1 -MD)
+endif ()
+
+if (ENABLE_TESTS)
+    message(STATUS "Enabling workspace wide tests")
+
+    # Setup GoogleTest
+    include(FetchContent)
+    FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG release-1.12.1
+    )
+    FetchContent_MakeAvailable(googletest)
+    enable_testing()
+    include(GoogleTest)
+
+    # Include google benchmark
+    add_subdirectory(${THIRD_PARTY_DIR}/benchmark ${THIRD_PARTY_DIR}/benchmark/build)
+
+    # Setup jsoncpp
+    set(JSONCPP_DIR ${THIRD_PARTY_DIR}/jsoncpp)
+    include_directories(${JSONCPP_DIR})
+    add_library(
+            jsoncpp
+            ${JSONCPP_DIR}/jsoncpp.cpp
+    )
+endif ()
+
+# Add these compile options for our own code, not needed for the above deps
+if (UNIX)
+    add_compile_options(-Wall -Wextra -Wimplicit-fallthrough -Wextra-semi
+            -Wno-missing-field-initializers -Wno-unused-parameter -Wno-psabi
+            -Wshadow
+            -Wsign-compare)
 endif()
 
+
+add_subdirectory(np_cpp_ffi)
 add_subdirectory(ldt_np_c_sample)
 
 if (ENABLE_FUZZ)
     message(STATUS "Building fuzzers")
     add_subdirectory(ldt_np_adv_ffi_fuzz)
-endif()
-
-
+endif ()

@@ -84,7 +84,7 @@ impl crypto_provider::hmac::Hmac<64> for HmacSha512 {
 mod tests {
     use crate::Boringssl;
     use core::marker::PhantomData;
-    use crypto_provider::hmac::testing::*;
+    use crypto_provider_test::hmac::*;
 
     #[apply(hmac_test_cases)]
     fn hmac_tests(testcase: CryptoProviderTestCase<Boringssl>) {

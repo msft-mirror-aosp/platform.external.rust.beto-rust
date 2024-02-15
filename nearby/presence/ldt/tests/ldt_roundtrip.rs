@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::unwrap_used)]
+
 use crypto_provider::aes::BLOCK_SIZE;
 use crypto_provider::{CryptoProvider, CryptoRng};
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use ldt::*;
 use ldt_tbc::TweakableBlockCipher;
 use rand::rngs::StdRng;
@@ -24,26 +26,26 @@ use xts_aes::{XtsAes128, XtsAes256};
 
 #[test]
 fn roundtrip_normal_padder() {
-    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
+    let mut rng = <CryptoProviderImpl as CryptoProvider>::CryptoRng::new();
     let mut rc_rng = rand::rngs::StdRng::from_entropy();
     let plaintext_len_range = distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 2 - 1);
 
     for _ in 0..100_000 {
         if rc_rng.gen() {
-            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
-            do_roundtrip::<16, _, _, _, RustCrypto>(
-                LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
-                LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
-                &DefaultPadder::default(),
+            let ldt_key = LdtKey::from_random::<CryptoProviderImpl>(&mut rng);
+            do_roundtrip::<16, _, _, _, CryptoProviderImpl>(
+                LdtEncryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(&ldt_key),
+                &DefaultPadder,
                 &mut rng,
                 &plaintext_len_range,
             )
         } else {
-            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
-            do_roundtrip::<16, _, _, _, RustCrypto>(
-                LdtEncryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
-                LdtDecryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
-                &DefaultPadder::default(),
+            let ldt_key = LdtKey::from_random::<CryptoProviderImpl>(&mut rng);
+            do_roundtrip::<16, _, _, _, CryptoProviderImpl>(
+                LdtEncryptCipher::<16, XtsAes256<CryptoProviderImpl>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes256<CryptoProviderImpl>, Swap>::new(&ldt_key),
+                &DefaultPadder,
                 &mut rng,
                 &plaintext_len_range,
             )
@@ -53,29 +55,30 @@ fn roundtrip_normal_padder() {
 
 #[test]
 fn roundtrip_xor_padder() {
-    let mut rng = <RustCrypto as CryptoProvider>::CryptoRng::new();
+    let mut rng = <CryptoProviderImpl as CryptoProvider>::CryptoRng::new();
     let mut rc_rng = rand::rngs::StdRng::from_entropy();
     // 2 bytes smaller because we're using a 2 byte salt
     let plaintext_len_range =
         distributions::Uniform::new_inclusive(BLOCK_SIZE, BLOCK_SIZE * 2 - 1 - 2);
 
     for _ in 0..100_000 {
-        let padder: XorPadder<BLOCK_SIZE> = random_bytes::<BLOCK_SIZE, RustCrypto>(&mut rng).into();
+        let padder: XorPadder<BLOCK_SIZE> =
+            random_bytes::<BLOCK_SIZE, CryptoProviderImpl>(&mut rng).into();
 
         if rc_rng.gen() {
-            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
-            do_roundtrip::<16, _, _, _, RustCrypto>(
-                LdtEncryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
-                LdtDecryptCipher::<16, XtsAes128<RustCrypto>, Swap>::new(&ldt_key),
+            let ldt_key = LdtKey::from_random::<CryptoProviderImpl>(&mut rng);
+            do_roundtrip::<16, _, _, _, CryptoProviderImpl>(
+                LdtEncryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes128<CryptoProviderImpl>, Swap>::new(&ldt_key),
                 &padder,
                 &mut rng,
                 &plaintext_len_range,
             )
         } else {
-            let ldt_key = LdtKey::from_random::<RustCrypto>(&mut rng);
-            do_roundtrip::<16, _, _, _, RustCrypto>(
-                LdtEncryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
-                LdtDecryptCipher::<16, XtsAes256<RustCrypto>, Swap>::new(&ldt_key),
+            let ldt_key = LdtKey::from_random::<CryptoProviderImpl>(&mut rng);
+            do_roundtrip::<16, _, _, _, CryptoProviderImpl>(
+                LdtEncryptCipher::<16, XtsAes256<CryptoProviderImpl>, Swap>::new(&ldt_key),
+                LdtDecryptCipher::<16, XtsAes256<CryptoProviderImpl>, Swap>::new(&ldt_key),
                 &padder,
                 &mut rng,
                 &plaintext_len_range,

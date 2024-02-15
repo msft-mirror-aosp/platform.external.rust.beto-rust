@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(missing_docs)]
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ldt_np_adv::*;
 
@@ -21,6 +23,7 @@ use rand::{Rng as _, SeedableRng as _};
 use crypto_provider::CryptoProvider;
 use crypto_provider_openssl::Openssl;
 use crypto_provider_rustcrypto::RustCrypto;
+
 use np_hkdf::NpKeySeedHkdf;
 
 fn ldt_adv_scan<C: CryptoProvider>(c: &mut Criterion) {
@@ -29,7 +32,7 @@ fn ldt_adv_scan<C: CryptoProvider>(c: &mut Criterion) {
     let mut rng = rand_pcg::Pcg64::from_seed(seed);
 
     for &len in &[1_usize, 10, 1000] {
-        c.bench_function(&format!("Scan adv with fresh ciphers/{len}"), |b| {
+        let _ = c.bench_function(&format!("Scan adv with fresh ciphers/{len}"), |b| {
             let configs = random_configs::<C, _>(&mut rng, len);
             let payload_len = rng.gen_range(crypto_provider::aes::BLOCK_SIZE..=LDT_XTS_AES_MAX_LEN);
             let payload = random_vec(&mut rng, payload_len);
@@ -41,7 +44,7 @@ fn ldt_adv_scan<C: CryptoProvider>(c: &mut Criterion) {
                 black_box(find_matching_item::<C>(&ciphers, salt, &payload))
             });
         });
-        c.bench_function(&format!("Scan adv with existing ciphers/{len}"), |b| {
+        let _ = c.bench_function(&format!("Scan adv with existing ciphers/{len}"), |b| {
             let configs = random_configs::<C, _>(&mut rng, len);
             let payload_len = rng.gen_range(crypto_provider::aes::BLOCK_SIZE..=LDT_XTS_AES_MAX_LEN);
             let payload = random_vec(&mut rng, payload_len);
@@ -63,7 +66,7 @@ fn find_matching_item<C: CryptoProvider>(
     payload: &[u8],
 ) {
     let padder = salt_padder::<16, C>(salt);
-    ciphers
+    let _ = ciphers
         .iter()
         .enumerate()
         .filter_map(|(index, item)| {
@@ -73,10 +76,7 @@ fn find_matching_item<C: CryptoProvider>(
                 .ok()
         })
         .next()
-        .map(|(index, buffer)| MatchResult {
-            matching_index: index,
-            buffer,
-        });
+        .map(|(index, buffer)| MatchResult { matching_index: index, buffer });
 }
 
 fn build_ciphers<C: CryptoProvider>(

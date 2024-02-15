@@ -14,6 +14,8 @@
 
 //! A manual benchmark for more interactive parameter-twiddling.
 
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
 use clap::Parser as _;
 use crypto_provider_rustcrypto::RustCrypto;
 use ldt::{LdtDecryptCipher, LdtEncryptCipher, LdtKey, Mix, Swap, XorPadder};
@@ -84,9 +86,7 @@ fn main() {
                 arr_ref.ct_eq(&scenario.plaintext_prefix_hash).into()
             });
 
-            histogram
-                .record((start.elapsed().as_micros()) as u64)
-                .unwrap();
+            histogram.record((start.elapsed().as_micros()) as u64).unwrap();
 
             found
         })
@@ -151,10 +151,5 @@ fn random_ldt_scenario<const B: usize, T: TweakableBlockCipher<B>, M: Mix, C: Cr
     hasher.update(&plaintext[..MATCH_LEN]);
     hasher.finalize_into_reset(&mut plaintext_prefix_hash);
 
-    LdtScenario {
-        ldt_enc,
-        ldt_dec,
-        plaintext,
-        plaintext_prefix_hash: plaintext_prefix_hash.into(),
-    }
+    LdtScenario { ldt_enc, ldt_dec, plaintext, plaintext_prefix_hash: plaintext_prefix_hash.into() }
 }

@@ -16,8 +16,8 @@
 //! diverged (https://boringssl.googlesource.com/boringssl/+/HEAD/PORTING.md#hmac-s), we have to
 //! have separate implementations.
 //!
-//! See the _Using BoringSSL_ section in `nearby/scripts/prepare_boringssl.sh` for instructions on
-//! how to test against BoringSSL.
+//! See the _Using BoringSSL_ section in `crypto/README.md` for instructions on
+//! how to test against BoringSSL, or see the subcommands in the top level crate.
 
 use crate::{sha2::OpenSslSha256, sha2::OpenSslSha512, OpenSslHash};
 use crypto_provider::hmac::{InvalidLength, MacError};
@@ -37,28 +37,20 @@ impl Hash<64> for OpenSslSha512 {}
 
 impl<const N: usize, H: Hash<N>> crypto_provider::hmac::Hmac<N> for Hmac<H> {
     fn new_from_key(key: [u8; N]) -> Self {
-        Self {
-            marker: PhantomData,
-            ctx: HmacCtx::new(&key, H::get_md()).unwrap(),
-        }
+        Self { marker: PhantomData, ctx: HmacCtx::new(&key, H::get_md()).unwrap() }
     }
 
     fn new_from_slice(key: &[u8]) -> Result<Self, InvalidLength> {
-        Ok(Self {
-            marker: PhantomData,
-            ctx: HmacCtx::new(key, H::get_md()).unwrap(),
-        })
+        Ok(Self { marker: PhantomData, ctx: HmacCtx::new(key, H::get_md()).unwrap() })
     }
 
     fn update(&mut self, data: &[u8]) {
-        self.ctx
-            .update(data)
-            .expect("should be able to update signer");
+        self.ctx.update(data).expect("should be able to update signer");
     }
 
     fn finalize(mut self) -> [u8; N] {
         let mut buf = [0_u8; N];
-        self.ctx.finalize(&mut buf).expect("wrong length");
+        let _ = self.ctx.finalize(&mut buf).expect("wrong length");
         buf
     }
 
@@ -102,7 +94,7 @@ impl<const N: usize, H: Hash<N>> crypto_provider::hmac::Hmac<N> for Hmac<H> {
 mod tests {
     use crate::Openssl;
     use core::marker::PhantomData;
-    use crypto_provider::hmac::testing::*;
+    use crypto_provider_test::hmac::*;
 
     #[apply(hmac_test_cases)]
     fn hmac_tests(testcase: CryptoProviderTestCase<Openssl>) {

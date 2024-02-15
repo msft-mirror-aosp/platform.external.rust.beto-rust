@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate alloc;
-
 use crate::RcRng;
-use alloc::vec::Vec;
 use core::marker::PhantomData;
 use crypto_provider::elliptic_curve::{EcdhProvider, EphemeralSecret, PublicKey};
 use crypto_provider::x25519::X25519;
@@ -45,6 +42,7 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send> EphemeralSecret<X25519>
     type Impl = X25519Ecdh<R>;
     type Error = Error;
     type Rng = RcRng<R>;
+    type EncodedPublicKey = [u8; 32];
 
     fn generate_random(rng: &mut Self::Rng) -> Self {
         Self {
@@ -53,9 +51,9 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send> EphemeralSecret<X25519>
         }
     }
 
-    fn public_key_bytes(&self) -> Vec<u8> {
+    fn public_key_bytes(&self) -> Self::EncodedPublicKey {
         let pubkey: x25519_dalek::PublicKey = (&self.secret).into();
-        pubkey.to_bytes().into()
+        pubkey.to_bytes()
     }
 
     fn diffie_hellman(
@@ -68,7 +66,7 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send> EphemeralSecret<X25519>
 
 #[cfg(test)]
 impl<R: CryptoRng + RngCore + SeedableRng + Send>
-    crypto_provider::elliptic_curve::EphemeralSecretForTesting<X25519>
+    crypto_provider_test::elliptic_curve::EphemeralSecretForTesting<X25519>
     for X25519EphemeralSecret<R>
 {
     fn from_private_components(
@@ -76,11 +74,9 @@ impl<R: CryptoRng + RngCore + SeedableRng + Send>
         _public_key: &X25519PublicKey,
     ) -> Result<Self, Self::Error> {
         Ok(Self {
-            secret: x25519_dalek::EphemeralSecret::random_from_rng(
-                &mut crate::testing::MockCryptoRng {
-                    values: private_bytes.iter(),
-                },
-            ),
+            secret: x25519_dalek::EphemeralSecret::random_from_rng(crate::testing::MockCryptoRng {
+                values: private_bytes.iter(),
+            }),
             marker: Default::default(),
         })
     }
@@ -92,14 +88,15 @@ pub struct X25519PublicKey(x25519_dalek::PublicKey);
 
 impl PublicKey<X25519> for X25519PublicKey {
     type Error = Error;
+    type EncodedPublicKey = [u8; 32];
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let byte_sized: [u8; 32] = bytes.try_into().map_err(|_| Error::WrongSize)?;
         Ok(Self(byte_sized.into()))
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
-        self.0.as_bytes().to_vec()
+    fn to_bytes(&self) -> Self::EncodedPublicKey {
+        self.0.to_bytes()
     }
 }
 
@@ -114,7 +111,7 @@ pub enum Error {
 mod tests {
     use super::X25519Ecdh;
     use core::marker::PhantomData;
-    use crypto_provider::x25519::testing::*;
+    use crypto_provider_test::x25519::*;
     use rand::rngs::StdRng;
 
     #[apply(x25519_test_cases)]

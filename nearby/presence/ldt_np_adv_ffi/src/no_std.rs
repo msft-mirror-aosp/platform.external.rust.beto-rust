@@ -14,18 +14,12 @@
 //
 // mod to handle all of the impls needed for no_std
 
-use libc_alloc::LibcAlloc;
-
 extern crate panic_abort;
+
+use libc_alloc::LibcAlloc;
 
 #[global_allocator]
 static ALLOCATOR: LibcAlloc = LibcAlloc;
 
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
-
-#[alloc_error_handler]
-#[allow(clippy::panic)]
-fn default_handler(layout: core::alloc::Layout) -> ! {
-    panic!("memory allocation of {} bytes failed", layout.size())
-}

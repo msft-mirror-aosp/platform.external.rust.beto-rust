@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate core;
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use anyhow::anyhow;
 use crypto_provider::CryptoProvider;
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use ldt_tbc::TweakableBlockCipherDecrypter;
 use ldt_tbc::TweakableBlockCipherEncrypter;
 use ldt_tbc::TweakableBlockCipherKey;
@@ -25,7 +25,7 @@ use xts_aes::{self, XtsAes128Key, XtsAes256Key, XtsDecrypter, XtsEncrypter, XtsK
 
 #[test]
 fn nist_test_vectors_data_unit_seq_128() -> Result<(), anyhow::Error> {
-    run_test_cases::<XtsAes128Key, <RustCrypto as CryptoProvider>::Aes128>(
+    run_test_cases::<XtsAes128Key, <CryptoProviderImpl as CryptoProvider>::Aes128>(
         "format tweak value input - data unit seq no/XTSGenAES128.rsp",
         // not 1000 because we skip test cases with data that isn't a multiple of 8 bits
         800,
@@ -34,7 +34,7 @@ fn nist_test_vectors_data_unit_seq_128() -> Result<(), anyhow::Error> {
 
 #[test]
 fn nist_test_vectors_data_unit_seq_256() -> Result<(), anyhow::Error> {
-    run_test_cases::<XtsAes256Key, <RustCrypto as CryptoProvider>::Aes256>(
+    run_test_cases::<XtsAes256Key, <CryptoProviderImpl as CryptoProvider>::Aes256>(
         "format tweak value input - data unit seq no/XTSGenAES256.rsp",
         600,
     )
@@ -42,7 +42,7 @@ fn nist_test_vectors_data_unit_seq_256() -> Result<(), anyhow::Error> {
 
 #[test]
 fn nist_test_vectors_hex_tweak_128() -> Result<(), anyhow::Error> {
-    run_test_cases::<XtsAes128Key, <RustCrypto as CryptoProvider>::Aes128>(
+    run_test_cases::<XtsAes128Key, <CryptoProviderImpl as CryptoProvider>::Aes128>(
         "format tweak value input - 128 hex str/XTSGenAES128.rsp",
         800,
     )
@@ -50,7 +50,7 @@ fn nist_test_vectors_hex_tweak_128() -> Result<(), anyhow::Error> {
 
 #[test]
 fn nist_test_vectors_hex_tweak_256() -> Result<(), anyhow::Error> {
-    run_test_cases::<XtsAes256Key, <RustCrypto as CryptoProvider>::Aes256>(
+    run_test_cases::<XtsAes256Key, <CryptoProviderImpl as CryptoProvider>::Aes256>(
         "format tweak value input - 128 hex str/XTSGenAES256.rsp",
         600,
     )
@@ -74,26 +74,18 @@ where
         match tc.test_type {
             TestType::Encrypt => {
                 buf.extend_from_slice(&tc.plaintext);
-                xts_enc
-                    .encrypt_data_unit(tc.tweak.clone(), &mut buf)
-                    .unwrap();
+                xts_enc.encrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
 
                 // check decryption too just for fun
-                xts_dec
-                    .decrypt_data_unit(tc.tweak.clone(), &mut buf)
-                    .unwrap();
+                xts_dec.decrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
                 assert_eq!(tc.plaintext, buf, "count {}", tc.count);
             }
             TestType::Decrypt => {
                 buf.extend_from_slice(&tc.ciphertext);
-                xts_dec
-                    .decrypt_data_unit(tc.tweak.clone(), &mut buf)
-                    .unwrap();
+                xts_dec.decrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
                 assert_eq!(tc.plaintext, buf, "count {}", tc.count);
 
-                xts_enc
-                    .encrypt_data_unit(tc.tweak.clone(), &mut buf)
-                    .unwrap();
+                xts_enc.encrypt_data_unit(tc.tweak.clone(), &mut buf).unwrap();
                 assert_eq!(tc.ciphertext, buf, "count {}", tc.count);
             }
         }
@@ -114,9 +106,9 @@ fn parse_test_vector(path: &str) -> Result<Vec<TestCase>, anyhow::Error> {
     // recently seen
     let mut test_type = None;
     let mut test_cases = Vec::new();
-    for parse_unit in (TestVectorFileIterator {
-        delegate: io::BufReader::new(file).lines().map(|r| r.unwrap()),
-    }) {
+    for parse_unit in
+        (TestVectorFileIterator { delegate: io::BufReader::new(file).lines().map(|r| r.unwrap()) })
+    {
         match parse_unit {
             ParseUnit::SectionHeader(s) => {
                 test_type = Some(match s.as_str() {
@@ -233,7 +225,7 @@ impl<I: Iterator<Item = String>> Iterator for TestVectorFileIterator<I> {
 
             // `key = value` in a test case chunk
             if let Some(captures) = regex::Regex::new("^(.*) = (.*)$").unwrap().captures(&line) {
-                map.insert(
+                let _ = map.insert(
                     captures.get(1).unwrap().as_str().to_owned(),
                     captures.get(2).unwrap().as_str().to_owned(),
                 );

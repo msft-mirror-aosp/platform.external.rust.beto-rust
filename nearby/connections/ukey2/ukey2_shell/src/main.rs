@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides a sample ukey2 shell app which can be run from the command line
+
+#![allow(clippy::expect_used)]
+//TODO: remove this and fix instances of unwrap
+#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+
 use std::io::{Read, Write};
 use std::process::exit;
 
@@ -58,9 +64,7 @@ fn write_frame(message: Vec<u8>) {
     let length: u32 = message.len() as u32;
     let length_bytes = length.to_be_bytes();
     std::io::stdout().write_all(&length_bytes).unwrap();
-    std::io::stdout()
-        .write_all(message.as_slice())
-        .expect("failed to write message");
+    std::io::stdout().write_all(message.as_slice()).expect("failed to write message");
     let _ = std::io::stdout().flush();
 }
 
@@ -92,9 +96,7 @@ fn read_frame() -> Vec<u8> {
     assert_eq!(LENGTH, std::io::stdin().read(&mut length_buf).unwrap());
     let length_usize = u32::from_be_bytes(length_buf);
     let mut buffer = vec![0u8; length_usize as usize];
-    std::io::stdin()
-        .read_exact(buffer.as_mut_slice())
-        .expect("failed to read frame");
+    std::io::stdin().read_exact(buffer.as_mut_slice()).expect("failed to read frame");
     buffer
 }
 
@@ -104,20 +106,13 @@ struct Ukey2Shell {
 
 impl Ukey2Shell {
     fn new(verification_string_length: i32) -> Self {
-        Self {
-            verification_string_length: verification_string_length as usize,
-        }
+        Self { verification_string_length: verification_string_length as usize }
     }
 
     fn run_secure_connection_loop(connection_ctx: &mut D2DConnectionContextV1) -> bool {
         loop {
             let input = read_frame();
-            let idx = input
-                .iter()
-                .enumerate()
-                .find(|(_index, &byte)| byte == 0x20)
-                .unwrap()
-                .0;
+            let idx = input.iter().enumerate().find(|(_index, &byte)| byte == 0x20).unwrap().0;
             let (cmd, payload) = (&input[0..idx], &input[idx + 1..]);
             if cmd == b"encrypt" {
                 let result =
@@ -150,19 +145,12 @@ impl Ukey2Shell {
         initiator_ctx
             .handle_handshake_message(server_init_msg.as_slice())
             .expect("Failed to handle message");
-        write_frame(
-            initiator_ctx
-                .get_next_handshake_message()
-                .unwrap_or_default(),
-        );
+        write_frame(initiator_ctx.get_next_handshake_message().unwrap_or_default());
         // confirm auth str
         let auth_str = initiator_ctx
             .to_completed_handshake()
             .ok()
-            .and_then(|h| {
-                h.auth_string::<RustCrypto>()
-                    .derive_vec(self.verification_string_length)
-            })
+            .and_then(|h| h.auth_string::<RustCrypto>().derive_vec(self.verification_string_length))
             .unwrap_or_else(|| vec![0; self.verification_string_length]);
         write_frame(auth_str);
         let ack = read_frame();
@@ -180,9 +168,7 @@ impl Ukey2Shell {
             HandshakeImplementation::PublicKeyInProtobuf,
         );
         let initiator_init_msg = read_frame();
-        server_ctx
-            .handle_handshake_message(initiator_init_msg.as_slice())
-            .unwrap();
+        server_ctx.handle_handshake_message(initiator_init_msg.as_slice()).unwrap();
         let server_next_msg = server_ctx.get_next_handshake_message().unwrap();
         write_frame(server_next_msg);
         let initiator_finish_msg = read_frame();
@@ -193,10 +179,7 @@ impl Ukey2Shell {
         let auth_str = server_ctx
             .to_completed_handshake()
             .ok()
-            .and_then(|h| {
-                h.auth_string::<RustCrypto>()
-                    .derive_vec(self.verification_string_length)
-            })
+            .and_then(|h| h.auth_string::<RustCrypto>().derive_vec(self.verification_string_length))
             .unwrap_or_else(|| vec![0; self.verification_string_length]);
         write_frame(auth_str);
         let ack = read_frame();
@@ -214,9 +197,9 @@ fn main() {
     let args = Ukey2Cli::parse();
     let shell = Ukey2Shell::new(args.verification_string_length);
     if args.mode == MODE_INITIATOR {
-        shell.run_as_initiator();
+        let _ = shell.run_as_initiator();
     } else if args.mode == MODE_RESPONDER {
-        shell.run_as_responder();
+        let _ = shell.run_as_responder();
     } else {
         exit(1);
     }

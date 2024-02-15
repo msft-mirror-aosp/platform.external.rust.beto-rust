@@ -11,12 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![allow(
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::expect_used
-)]
+#![allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic, clippy::expect_used)]
 
 extern crate std;
 use crate::{
@@ -24,7 +19,7 @@ use crate::{
     NP_LEGACY_METADATA_KEY_LEN,
 };
 use anyhow::anyhow;
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use rand::Rng;
 use rand_ext::{random_vec_rc, seeded_rng};
 use serde_json::json;
@@ -38,7 +33,7 @@ fn np_adv_test_vectors() -> Result<(), anyhow::Error> {
         test_helper::get_data_file("presence/ldt_np_adv/resources/test/np_adv_test_vectors.json");
     let mut file = fs::File::open(full_path)?;
     let mut data = String::new();
-    file.read_to_string(&mut data)?;
+    let _ = file.read_to_string(&mut data)?;
     let test_cases = match serde_json::de::from_str(&data)? {
         serde_json::Value::Array(a) => a,
         _ => return Err(anyhow!("bad json")),
@@ -49,7 +44,7 @@ fn np_adv_test_vectors() -> Result<(), anyhow::Error> {
     for tc in test_cases {
         let key_seed = extract_key_array::<32>(&tc, "key_seed");
 
-        let hkdf = np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&key_seed);
+        let hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&key_seed);
         let ldt_key = hkdf.legacy_ldt_key();
         let hmac_key = hkdf.legacy_metadata_key_hmac_key();
 
@@ -57,9 +52,9 @@ fn np_adv_test_vectors() -> Result<(), anyhow::Error> {
         assert_eq!(&extract_key_vec(&tc, "hmac_key"), &hmac_key.as_bytes());
 
         let salt = LegacySalt::from(extract_key_array(&tc, "adv_salt"));
-        let padder = salt_padder::<16, RustCrypto>(salt);
+        let padder = salt_padder::<16, CryptoProviderImpl>(salt);
 
-        let ldt_enc = LdtEncrypterXtsAes128::<RustCrypto>::new(&ldt_key);
+        let ldt_enc = LdtEncrypterXtsAes128::<CryptoProviderImpl>::new(&ldt_key);
 
         let decrypter = build_np_adv_decrypter_from_key_seed(
             &hkdf,
@@ -96,13 +91,13 @@ fn gen_test_vectors() {
         let plaintext = random_vec_rc(&mut rng, len);
         let key_seed: [u8; 32] = rng.gen();
 
-        let hkdf = np_hkdf::NpKeySeedHkdf::<RustCrypto>::new(&key_seed);
+        let hkdf = np_hkdf::NpKeySeedHkdf::<CryptoProviderImpl>::new(&key_seed);
         let ldt_key = hkdf.legacy_ldt_key();
         let hmac_key = hkdf.legacy_metadata_key_hmac_key();
         let hmac: [u8; 32] = hmac_key.calculate_hmac(&plaintext[..NP_LEGACY_METADATA_KEY_LEN]);
-        let ldt_enc = LdtEncrypterXtsAes128::<RustCrypto>::new(&ldt_key);
+        let ldt_enc = LdtEncrypterXtsAes128::<CryptoProviderImpl>::new(&ldt_key);
 
-        let padder = salt_padder::<16, RustCrypto>(LegacySalt::from(rng.gen::<[u8; 2]>()));
+        let padder = salt_padder::<16, CryptoProviderImpl>(LegacySalt::from(rng.gen::<[u8; 2]>()));
         let mut ciphertext = plaintext.clone();
         ldt_enc.encrypt(&mut ciphertext[..], &padder).unwrap();
 
