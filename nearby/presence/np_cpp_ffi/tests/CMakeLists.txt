@@ -20,10 +20,12 @@ add_executable(
         deserialize_result_tests.cc
         np_cpp_test.h
         np_cpp_test.cc
-        v0_private_identity_tests.cc
-        v0_public_identity_tests.cc
-        v1_private_identity_tests.cc
-        v1_public_identity_tests.cc
+	v0_encrypted_deserialization_tests.cc
+	v0_encrypted_serialization_tests.cc
+	v0_unencrypted_deserialization_tests.cc
+	v0_unencrypted_serialization_tests.cc
+	v1_encrypted_deserialization_tests.cc
+	v1_unencrypted_deserialization_tests.cc
 )
 
 target_link_libraries(

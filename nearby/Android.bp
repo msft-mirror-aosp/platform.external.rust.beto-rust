@@ -10,18 +10,6 @@ package {
     default_applicable_licenses: ["external_rust_beto-rust_license"],
 }
 
-rust_defaults {
-    name: "beto_rust_defaults",
-    host_supported: true,
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
-    edition: "2021",
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
-    ],
-}
-
 rust_library_rlib {
     name: "libcrypto_provider",
     crate_name: "crypto_provider",
@@ -47,16 +35,6 @@ rust_library_rlib {
     srcs: ["crypto/crypto_provider_stubs/src/lib.rs"],
     rustlibs: [
         "libcrypto_provider",
-    ],
-}
-
-rust_library_rlib {
-    name: "liblock_adapter",
-    crate_name: "lock_adapter",
-    defaults: ["beto_rust_defaults"],
-    srcs: ["util/lock_adapter/src/lib.rs"],
-    features: [
-        "std",
     ],
 }
 
