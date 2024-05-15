@@ -43,3 +43,15 @@ license {
         "LICENSE",
     ],
 }
+
+rust_defaults {
+    name: "beto_rust_defaults",
+    host_supported: true,
+    cargo_env_compat: true,
+    cargo_pkg_version: "0.1.0",
+    edition: "2021",
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
