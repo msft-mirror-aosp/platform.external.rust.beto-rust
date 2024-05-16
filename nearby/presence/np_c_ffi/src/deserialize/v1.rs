@@ -164,17 +164,3 @@ pub extern "C" fn np_ffi_GetV1DEResult_kind(result: GetV1DEResult) -> GetV1DERes
 pub extern "C" fn np_ffi_GetV1DEResult_into_SUCCESS(result: GetV1DEResult) -> V1DataElement {
     unwrap(result.into_success(), PanicReason::EnumCastFailed)
 }
-
-/// Converts a `V1DataElement` to a `GenericV1DataElement` which
-/// only maintains information about the DE's type-code and payload.
-#[no_mangle]
-pub extern "C" fn np_ffi_V1DataElement_to_generic(de: V1DataElement) -> GenericV1DataElement {
-    de.to_generic()
-}
-
-/// Extracts the numerical value of the given V1 DE type code as
-/// an unsigned 32-bit integer.
-#[no_mangle]
-pub extern "C" fn np_ffi_V1DEType_to_uint32_t(de_type: V1DEType) -> u32 {
-    de_type.to_u32()
-}
