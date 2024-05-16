@@ -19,9 +19,7 @@ use crate::serialize::AdvertisementBuilderKind;
 use crate::utils::FfiEnum;
 use crate::v1::V1VerificationMode;
 use crypto_provider_default::CryptoProviderImpl;
-use handle_map::{declare_handle_map, HandleLike, HandleMapDimensions, HandleMapFullError};
-use np_adv;
-use np_adv_dynamic;
+use handle_map::{declare_handle_map, HandleLike, HandleMapFullError};
 
 /// A handle to a builder for V1 advertisements.
 #[derive(Clone, Copy)]
@@ -32,21 +30,24 @@ pub struct V1AdvertisementBuilder {
 }
 
 impl V1AdvertisementBuilder {
-    /// Attempts to create a builder for a new public section within
-    /// this advertisement, returning a handle to the newly-created
-    /// section builder if successful.
+    /// Attempts to create a builder for a new public section within this advertisement, returning
+    /// an owned handle to the newly-created section builder if successful.
     ///
-    /// This method may fail if there is another currently-active
-    /// section builder for the same advertisement builder, if the
-    /// kind of section being added does not match the advertisement
-    /// type (public/encrypted), or if the section would not manage
-    /// to fit within the enclosing advertisement.
+    /// This method may fail if there is another currently-active section builder for the same
+    /// advertisement builder, if the kind of section being added does not match the advertisement
+    /// type (public/encrypted), or if the section would not manage to fit within the enclosing
+    /// advertisement.
     pub fn public_section_builder(&self) -> CreateV1SectionBuilderResult {
         self.section_builder_internals(|internals| internals.public_section_builder())
     }
-    /// Attempts to create a builder for a new encrypted section within
-    /// this advertisement, returning a handle to the newly-created
-    /// section builder if successful.
+
+    /// Gets the kind of advertisement builder (public/encrypted)
+    pub fn kind(&self) -> AdvertisementBuilderKind {
+        self.kind
+    }
+
+    /// Attempts to create a builder for a new encrypted section within this advertisement,
+    /// returning an owned handle to the newly-created section builder if successful.
     ///
     /// The identity details for the new section builder may be specified
     /// via providing the broadcast credential data, the kind of encrypted
@@ -61,12 +62,22 @@ impl V1AdvertisementBuilder {
     pub fn encrypted_section_builder(
         &self,
         broadcast_cred: V1BroadcastCredential,
-        identity_type: EncryptedIdentityType,
         verification_mode: V1VerificationMode,
     ) -> CreateV1SectionBuilderResult {
         self.section_builder_internals(move |internals| {
-            internals.encrypted_section_builder(broadcast_cred, identity_type, verification_mode)
+            internals.encrypted_section_builder(broadcast_cred, verification_mode)
         })
+    }
+
+    /// Attempts to serialize the contents of the advertisement builder behind this handle to
+    /// bytes. Assuming that the handle is valid, this operation will always take ownership of the
+    /// handle and result in the contents behind the advertisement builder handle being
+    /// deallocated.
+    pub fn into_advertisement(self) -> SerializeV1AdvertisementResult {
+        match self.handle.deallocate() {
+            Ok(adv_builder) => adv_builder.into_advertisement(),
+            Err(_) => SerializeV1AdvertisementResult::InvalidAdvertisementBuilderHandle,
+        }
     }
 
     fn section_builder_internals(
@@ -85,13 +96,12 @@ impl V1AdvertisementBuilder {
                     Err(e) => e.into(),
                 }
             }
-            Err(_) => CreateV1SectionBuilderResult::InvalidAdvBuilderHandle,
+            Err(_) => CreateV1SectionBuilderResult::InvalidAdvertisementBuilderHandle,
         }
     }
 }
 
 /// Discriminant for `CreateV1AdvertisementBuilderResult`
-
 #[derive(Copy, Clone)]
 #[repr(u8)]
 pub enum CreateV1AdvertisementBuilderResultKind {
@@ -152,30 +162,19 @@ pub fn create_v1_advertisement_builder(
         .into()
 }
 
-impl V1AdvertisementBuilder {
-    /// Gets the kind of advertisement builder (public/encrypted)
-    pub fn kind(&self) -> AdvertisementBuilderKind {
-        self.kind
-    }
-}
-
 pub(crate) enum V1AdvertisementBuilderState {
     /// Internal state for when we have an active advertisement
     /// builder, but no currently-active section builder.
     Advertisement(np_adv_dynamic::extended::BoxedAdvBuilder),
     /// Internal state for when we have both an active advertisement
     /// builder and an active section builder.
-    Section(
-        np_adv_dynamic::extended::BoxedSectionBuilder<
-            np_adv::extended::serialize::AdvBuilder,
-            CryptoProviderImpl,
-        >,
-    ),
+    Section(np_adv_dynamic::extended::BoxedSectionBuilder<np_adv::extended::serialize::AdvBuilder>),
 }
 
 /// Internal version of errors which may be raised when
 /// attempting to derive a new section builder from an
 /// advertisement builder.
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum SectionBuilderError {
     /// We're currently in the middle of building a section.
     UnclosedActiveSection,
@@ -207,6 +206,46 @@ impl From<np_adv_dynamic::extended::BoxedAddSectionError> for SectionBuilderErro
     }
 }
 
+/// Discriminant for `SerializeV1AdvertisementResult`.
+#[repr(u8)]
+pub enum SerializeV1AdvertisementResultKind {
+    /// Serializing the advertisement to bytes was successful.
+    Success = 0,
+    /// The state of the advertisement builder was invalid
+    /// for the builder to be closed for serialization, likely
+    /// because there was an unclosed section builder.
+    InvalidBuilderState = 1,
+    /// The advertisement builder handle was invalid.
+    InvalidAdvertisementBuilderHandle = 2,
+}
+
+/// The result of attempting to serialize the contents
+/// of a V1 advertisement builder to raw bytes.
+#[repr(C)]
+#[allow(missing_docs, clippy::large_enum_variant)]
+pub enum SerializeV1AdvertisementResult {
+    Success(ByteBuffer<250>),
+    InvalidBuilderState,
+    InvalidAdvertisementBuilderHandle,
+}
+
+impl SerializeV1AdvertisementResult {
+    declare_enum_cast! { into_success, Success, ByteBuffer<250> }
+}
+
+impl FfiEnum for SerializeV1AdvertisementResult {
+    type Kind = SerializeV1AdvertisementResultKind;
+    fn kind(&self) -> SerializeV1AdvertisementResultKind {
+        match self {
+            Self::Success(_) => SerializeV1AdvertisementResultKind::Success,
+            Self::InvalidBuilderState => SerializeV1AdvertisementResultKind::InvalidBuilderState,
+            Self::InvalidAdvertisementBuilderHandle => {
+                SerializeV1AdvertisementResultKind::InvalidAdvertisementBuilderHandle
+            }
+        }
+    }
+}
+
 /// Internal, Rust-side implementation of a V1 advertisement builder.
 pub struct V1AdvertisementBuilderInternals {
     // Note: This is actually always populated from an external
@@ -228,12 +267,12 @@ impl V1AdvertisementBuilderInternals {
     /// of the newly-added section builder.
     pub(crate) fn section_builder_internal(
         &mut self,
-        identity: np_adv_dynamic::extended::BoxedIdentity<CryptoProviderImpl>,
+        identity: np_adv_dynamic::extended::BoxedEncoder,
     ) -> Result<usize, SectionBuilderError> {
         let state = self.state.take();
         match state {
             Some(V1AdvertisementBuilderState::Advertisement(adv_builder)) => {
-                match adv_builder.into_section_builder::<CryptoProviderImpl>(identity) {
+                match adv_builder.into_section_builder(identity) {
                     Ok(section_builder) => {
                         let section_index = section_builder.section_index();
                         self.state = Some(V1AdvertisementBuilderState::Section(section_builder));
@@ -256,55 +295,59 @@ impl V1AdvertisementBuilderInternals {
     }
 
     pub(crate) fn public_section_builder(&mut self) -> Result<usize, SectionBuilderError> {
-        let identity = np_adv_dynamic::extended::BoxedIdentity::PublicIdentity;
+        let identity = np_adv_dynamic::extended::BoxedEncoder::Unencrypted;
         self.section_builder_internal(identity)
     }
     pub(crate) fn encrypted_section_builder(
         &mut self,
         broadcast_cred: V1BroadcastCredential,
-        identity_type: EncryptedIdentityType,
         verification_mode: V1VerificationMode,
     ) -> Result<usize, SectionBuilderError> {
         let mut rng = get_global_crypto_rng();
         let rng = rng.get_rng();
-        let identity_type = identity_type.into();
         let internal_broadcast_cred = broadcast_cred.into_internal();
-        let identity = match verification_mode {
+        let encoder = match verification_mode {
             V1VerificationMode::Mic => {
-                let encoder = np_adv::extended::serialize::MicEncryptedSectionEncoder::<
-                    CryptoProviderImpl,
-                >::new_random_salt(
-                    rng, identity_type, &internal_broadcast_cred
-                );
-                np_adv_dynamic::extended::BoxedIdentity::MicEncrypted(encoder)
+                let encoder =
+                    np_adv::extended::serialize::MicEncryptedSectionEncoder::<_>::new_wrapped_salt::<
+                        CryptoProviderImpl,
+                    >(rng, &internal_broadcast_cred);
+                np_adv_dynamic::extended::BoxedEncoder::MicEncrypted(encoder)
             }
             V1VerificationMode::Signature => {
-                let encoder = np_adv::extended::serialize::SignedEncryptedSectionEncoder::<
-                    CryptoProviderImpl,
-                >::new_random_salt(
-                    rng, identity_type, &internal_broadcast_cred
-                );
-                np_adv_dynamic::extended::BoxedIdentity::SignedEncrypted(encoder)
+                let encoder =
+                    np_adv::extended::serialize::SignedEncryptedSectionEncoder::new_random_salt::<
+                        CryptoProviderImpl,
+                    >(rng, &internal_broadcast_cred);
+                np_adv_dynamic::extended::BoxedEncoder::SignedEncrypted(encoder)
             }
         };
-        self.section_builder_internal(identity)
+        self.section_builder_internal(encoder)
+    }
+    fn into_advertisement(self) -> SerializeV1AdvertisementResult {
+        match self.state {
+            Some(V1AdvertisementBuilderState::Advertisement(adv_builder)) => {
+                let array_view = adv_builder.into_advertisement().into_array_view();
+                SerializeV1AdvertisementResult::Success(ByteBuffer::from_array_view(array_view))
+            }
+            _ => SerializeV1AdvertisementResult::InvalidBuilderState,
+        }
     }
 }
 
-fn get_v1_advertisement_builder_handle_map_dimensions() -> HandleMapDimensions {
-    HandleMapDimensions {
-        num_shards: global_num_shards(),
-        max_active_handles: global_max_num_v1_advertisement_builders(),
-    }
+/// A `#[repr(C)]` handle to a value of type `V1AdvertisementBuilderInternals`
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct V1AdvertisementBuilderHandle {
+    handle_id: u64,
 }
 
-declare_handle_map! {
-    mod advertisement_builder {
-        #[dimensions = super::get_v1_advertisement_builder_handle_map_dimensions()]
-        type V1AdvertisementBuilderHandle: HandleLike<Object = super::V1AdvertisementBuilderInternals>;
-    }
-}
-use crate::serialize::v1::advertisement_builder::V1AdvertisementBuilderHandle;
+declare_handle_map!(
+    advertisement_builder,
+    crate::common::default_handle_map_dimensions(),
+    super::V1AdvertisementBuilderHandle,
+    super::V1AdvertisementBuilderInternals
+);
 
 /// Discriminant for `CreateV1SectionBuilderResult`
 #[derive(Copy, Clone)]
@@ -315,7 +358,7 @@ pub enum CreateV1SectionBuilderResultKind {
     /// We're currently in the middle of building a section.
     UnclosedActiveSection = 1,
     /// The advertisement builder handle was invalid.
-    InvalidAdvBuilderHandle = 2,
+    InvalidAdvertisementBuilderHandle = 2,
     /// We're attempting to build a section with an identity
     /// kind (public/encrypted) which doesn't match the kind
     /// for the entire advertisement.
@@ -333,7 +376,7 @@ pub enum CreateV1SectionBuilderResultKind {
 pub enum CreateV1SectionBuilderResult {
     Success(V1SectionBuilder),
     UnclosedActiveSection,
-    InvalidAdvBuilderHandle,
+    InvalidAdvertisementBuilderHandle,
     IdentityKindMismatch,
     NoSpaceLeft,
 }
@@ -344,8 +387,8 @@ impl FfiEnum for CreateV1SectionBuilderResult {
         match self {
             Self::Success(_) => CreateV1SectionBuilderResultKind::Success,
             Self::UnclosedActiveSection => CreateV1SectionBuilderResultKind::UnclosedActiveSection,
-            Self::InvalidAdvBuilderHandle => {
-                CreateV1SectionBuilderResultKind::InvalidAdvBuilderHandle
+            Self::InvalidAdvertisementBuilderHandle => {
+                CreateV1SectionBuilderResultKind::InvalidAdvertisementBuilderHandle
             }
             Self::IdentityKindMismatch => CreateV1SectionBuilderResultKind::IdentityKindMismatch,
             Self::NoSpaceLeft => CreateV1SectionBuilderResultKind::NoSpaceLeft,
@@ -416,12 +459,12 @@ pub enum NextV1DE16ByteSaltResultKind {
 /// The result of attempting to get the derived V1 DE
 /// 16-byte salt for the next-added DE to the section
 /// builder behind the given handle.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 #[repr(C)]
 #[allow(missing_docs)]
 pub enum NextV1DE16ByteSaltResult {
     Error,
-    Success([u8; 16]),
+    Success(FixedSizeArray<16>),
 }
 
 impl FfiEnum for NextV1DE16ByteSaltResult {
@@ -435,21 +478,18 @@ impl FfiEnum for NextV1DE16ByteSaltResult {
 }
 
 impl NextV1DE16ByteSaltResult {
-    declare_enum_cast! {into_success, Success, [u8; 16] }
-}
-
-impl From<Option<np_adv::extended::serialize::DeSalt<CryptoProviderImpl>>>
-    for NextV1DE16ByteSaltResult
-{
-    fn from(maybe_salt: Option<np_adv::extended::serialize::DeSalt<CryptoProviderImpl>>) -> Self {
-        match maybe_salt.and_then(|salt| salt.derive::<16>()) {
-            Some(salt) => NextV1DE16ByteSaltResult::Success(salt),
+    fn new_from_de_salt(salt: Option<np_adv::extended::serialize::DeSalt>) -> Self {
+        match salt.and_then(|salt| salt.derive::<16, CryptoProviderImpl>()) {
+            Some(salt) => NextV1DE16ByteSaltResult::Success(FixedSizeArray::from_array(salt)),
             None => NextV1DE16ByteSaltResult::Error,
         }
     }
+
+    declare_enum_cast! {into_success, Success, FixedSizeArray<16> }
 }
 
-/// A handle to a builder for V1 sections.
+/// A handle to a builder for V1 sections. This is not a unique handle; it is the same handle as
+/// the advertisement builder the section builder was originated from.
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct V1SectionBuilder {
@@ -471,7 +511,8 @@ impl V1SectionBuilder {
                         // matches the index of the section currently under construction.
                         let actual_section_index = section_builder.section_index() as u8;
                         if self.section_index == actual_section_index {
-                            let updated_adv_builder = section_builder.add_to_advertisement();
+                            let updated_adv_builder =
+                                section_builder.add_to_advertisement::<CryptoProviderImpl>();
                             adv_builder.state = Some(V1AdvertisementBuilderState::Advertisement(
                                 updated_adv_builder,
                             ));
@@ -498,7 +539,9 @@ impl V1SectionBuilder {
     /// is a public section.
     pub fn next_de_salt(&self) -> NextV1DE16ByteSaltResult {
         self.try_apply_to_internals(
-            |section_builder| section_builder.next_de_salt().into(),
+            |section_builder| {
+                NextV1DE16ByteSaltResult::new_from_de_salt(section_builder.next_de_salt())
+            },
             NextV1DE16ByteSaltResult::Error,
         )
     }
@@ -532,7 +575,6 @@ impl V1SectionBuilder {
         func: impl FnOnce(
             &mut np_adv_dynamic::extended::BoxedSectionBuilder<
                 np_adv::extended::serialize::AdvBuilder,
-                CryptoProviderImpl,
             >,
         ) -> R,
         invalid_handle_error: R,
@@ -585,5 +627,43 @@ impl V1DE127ByteBuffer {
             np_adv::extended::data_elements::GenericDataElement::try_from(de_type, payload_slice)
                 .ok()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_is_advertisement_building(adv_builder_state: &V1AdvertisementBuilderState) -> bool {
+        matches!(adv_builder_state, V1AdvertisementBuilderState::Advertisement(_))
+    }
+
+    #[allow(clippy::expect_used)]
+    #[test]
+    fn test_build_section_fails_with_outstanding_section() {
+        let mut adv_builder =
+            V1AdvertisementBuilderInternals::new(AdvertisementBuilderKind::Encrypted);
+
+        let adv_builder_state =
+            adv_builder.state.as_ref().expect("Adv builder state should be present.");
+        assert!(state_is_advertisement_building(adv_builder_state));
+        let section_index = adv_builder
+            .encrypted_section_builder(empty_broadcast_cred(), V1VerificationMode::Mic)
+            .expect("Should be able to build the first section.");
+        assert_eq!(section_index, 0);
+
+        assert!(adv_builder.state.is_some());
+        let adv_builder_state =
+            adv_builder.state.as_ref().expect("Adv builder state should be present.");
+        assert!(!state_is_advertisement_building(adv_builder_state));
+
+        let double_build_error = adv_builder
+            .encrypted_section_builder(empty_broadcast_cred(), V1VerificationMode::Mic)
+            .expect_err("Shouldn't be able to start a new section builder with an unclosed one.");
+        assert_eq!(double_build_error, SectionBuilderError::UnclosedActiveSection);
+    }
+
+    fn empty_broadcast_cred() -> V1BroadcastCredential {
+        V1BroadcastCredential::new([0; 32], [0; 16].into(), [0; 32])
     }
 }

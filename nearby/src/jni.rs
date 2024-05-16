@@ -17,9 +17,7 @@ use std::path;
 
 // This has to happen after both boringssl has been built and prepare rust openssl patches has been run.
 pub fn check_ldt_jni(root: &path::Path) -> anyhow::Result<()> {
-    for feature in ["opensslbssl", "boringssl"] {
-        run_cmd_shell(root, format!("cargo --config .cargo/config-boringssl.toml build -p ldt_np_jni --no-default-features --features={}", feature))?;
-    }
+    run_cmd_shell(root, "cargo build -p ldt_np_jni --no-default-features --features=boringssl")?;
     Ok(())
 }
 
@@ -30,7 +28,15 @@ pub fn run_kotlin_tests(root: &path::Path) -> anyhow::Result<()> {
 }
 
 pub fn run_ukey2_jni_tests(root: &path::Path) -> anyhow::Result<()> {
+    run_cmd_shell(root, "cargo build -p ukey2_jni")?;
     let ukey2_jni_path = root.to_path_buf().join("connections/ukey2/ukey2_jni/java");
     run_cmd_shell(&ukey2_jni_path, "./gradlew :test")?;
+    Ok(())
+}
+
+pub fn run_np_java_ffi_tests(root: &path::Path) -> anyhow::Result<()> {
+    run_cmd_shell(root, "cargo build -p np_java_ffi -F crypto_provider_default/rustcrypto")?;
+    let ukey2_jni_path = root.to_path_buf().join("presence/np_java_ffi");
+    run_cmd_shell(&ukey2_jni_path, "./gradlew :test --info --rerun")?;
     Ok(())
 }

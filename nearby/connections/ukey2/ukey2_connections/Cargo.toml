@@ -11,7 +11,6 @@ workspace = true
 default = []
 test_boringssl = ["crypto_provider_default/boringssl"]
 test_rustcrypto = ["crypto_provider_default/rustcrypto"]
-test_openssl = ["crypto_provider_default/openssl"]
 
 [dependencies]
 ukey2_rs = { path = "../ukey2" }

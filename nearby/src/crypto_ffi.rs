@@ -14,23 +14,13 @@
 
 use anyhow::anyhow;
 use cmd_runner::{run_cmd_shell, run_cmd_shell_with_color, YellowStderr};
-use owo_colors::OwoColorize as _;
 use semver::{Version, VersionReq};
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::{env, fs, path::Path};
 
 use crate::CargoOptions;
 
-pub fn boringssl_check_everything(root: &Path, cargo_options: &CargoOptions) -> anyhow::Result<()> {
-    check_boringssl(root, cargo_options)?;
-    check_openssl(root, cargo_options)?;
-    Ok(())
-}
-
 pub fn build_boringssl(root: &Path) -> anyhow::Result<()> {
-    let bindgen_version_req = VersionReq::parse(">=0.61.0")?;
+    let bindgen_version_req = VersionReq::parse(">=0.69.4")?;
     let bindgen_version = get_bindgen_version()?;
 
     if !bindgen_version_req.matches(&bindgen_version) {
@@ -82,89 +72,43 @@ pub fn check_boringssl(root: &Path, cargo_options: &CargoOptions) -> anyhow::Res
     run_cmd_shell(&bssl_dir, format!("cargo check {locked_arg}"))?;
     run_cmd_shell(&bssl_dir, "cargo fmt --check")?;
     run_cmd_shell(&bssl_dir, "cargo clippy --all-targets")?;
-    run_cmd_shell(&bssl_dir, format!("cargo test {locked_arg} -- --color=always"))?;
+    run_cmd_shell(&bssl_dir, cargo_options.test("check_boringssl", ""))?;
     run_cmd_shell(&bssl_dir, "cargo doc --no-deps")?;
-
-    run_cmd_shell(root, "cargo test -p ukey2_connections -p ukey2_rs --no-default-features --features test_boringssl")?;
-
-    Ok(())
-}
-
-pub fn prepare_patched_rust_openssl(root: &Path) -> anyhow::Result<()> {
-    let mut vendor_dir =
-        root.parent().ok_or_else(|| anyhow!("project root dir no parent dir"))?.to_path_buf();
-    vendor_dir.push("boringssl-build");
-    fs::create_dir_all(&vendor_dir)?;
-
-    let repo_dir = clone_repo_if_needed(
-        &vendor_dir,
-        "rust-openssl",
-        "https://github.com/sfackler/rust-openssl.git",
-    )?;
-
-    run_cmd_shell_with_color::<YellowStderr>(
-        &repo_dir,
-        "git checkout 7df56869c5e1e32369091ab106750d644d3aa0c4",
-    )?;
-    run_cmd_shell_with_color::<YellowStderr>(&repo_dir, "git branch -f BASE_COMMIT")?;
-    run_cmd_shell_with_color::<YellowStderr>(
-        &repo_dir,
-        format!(
-            "git am {}/scripts/openssl-patches/*.patch",
-            root.to_str().ok_or_else(|| anyhow!("root dir is not UTF-8"))?
-        ),
-    )?;
-
-    println!("{}", "Preparation complete. The required repositories are downloaded to `beto-rust/boringssl-build`. If
-you need to go back to a clean state, you can remove that directory and rerun this script.
-
-You can now build and test with boringssl using the following command
-  `cargo --config .cargo/config-boringssl.toml test -p crypto_provider* --features=boringssl,std`
-".cyan());
-
-    Ok(())
-}
-
-pub fn check_openssl(root: &Path, cargo_options: &CargoOptions) -> anyhow::Result<()> {
-    log::info!("Checking rust openssl");
-    prepare_patched_rust_openssl(root)?;
-    let locked_arg = if cargo_options.locked { "--locked" } else { "" };
-
-    // test the openssl crate with the boringssl feature
     run_cmd_shell(
         root,
-        format!(
-            concat!(
-                "cargo --config .cargo/config-boringssl.toml test {locked_arg} -p crypto_provider_openssl ",
-                "--features=boringssl -- --color=always"
-            ),
-            locked_arg=locked_arg
+        cargo_options.test(
+            "check_boringssl_ukey2",
+            "-p ukey2_connections -p ukey2_rs --no-default-features --features test_boringssl",
         ),
     )?;
-
     Ok(())
 }
 
-/// If the repo dir doesn't exist, or errors when running `git fetch -a`, re-clone it.
-///
-/// Returns the repo dir
-fn clone_repo_if_needed(
-    dir: &Path,
-    repo_subdir_name: &str,
-    repo_url: &str,
-) -> anyhow::Result<PathBuf> {
-    let mut repo_dir = dir.to_path_buf();
-    repo_dir.push(repo_subdir_name);
+/// Checks out latest boringssl commit and runs our crypto provider tests against it
+pub fn check_boringssl_at_head(root: &Path, cargo_options: &CargoOptions) -> anyhow::Result<()> {
+    // TODO: find a better way, a kokoro implemented auto-roller?
+    build_boringssl_at_latest(root)?;
 
-    if run_cmd_shell_with_color::<YellowStderr>(&repo_dir, "git fetch -a").is_err() {
-        // delete it and start over
-        if repo_dir.exists() {
-            fs::remove_dir_all(&repo_dir)?;
-        }
-        run_cmd_shell_with_color::<YellowStderr>(dir, format!("git clone {}", repo_url))?;
-    }
+    let bssl_dir = root.join("crypto/crypto_provider_boringssl");
+    run_cmd_shell(&bssl_dir, "cargo check")?;
+    run_cmd_shell(&bssl_dir, cargo_options.test("check_boringssl_latest", ""))?;
+    Ok(())
+}
 
-    Ok(repo_dir)
+fn build_boringssl_at_latest(root: &Path) -> anyhow::Result<()> {
+    // Now check boringssl against HEAD. Kokoro does not allow us to directly update the git submodule
+    // so we must use manual hackery instead :/
+    run_cmd_shell(root.parent().unwrap(), "rm -Rf third_party/boringssl")?;
+    run_cmd_shell(
+        &root.parent().unwrap().join("third_party"),
+        "git clone https://boringssl.googlesource.com/boringssl",
+    )?;
+    run_cmd_shell(
+        &root.parent().unwrap().join("third_party/boringssl"),
+        "git checkout origin/master",
+    )?;
+    build_boringssl(root)?;
+    Ok(())
 }
 
 fn get_bindgen_version() -> anyhow::Result<Version> {
