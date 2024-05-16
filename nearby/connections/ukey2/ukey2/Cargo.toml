@@ -10,7 +10,6 @@ workspace = true
 [features]
 default = []
 test_rustcrypto = ["crypto_provider_default/rustcrypto"]
-test_openssl = ["crypto_provider_default/openssl"]
 test_boringssl = ["crypto_provider_default/boringssl"]
 
 [dependencies]
