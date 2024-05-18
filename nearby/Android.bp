@@ -121,7 +121,7 @@ rust_ffi_shared {
     rlibs: [
         "libcfg_if",
         "libcrypto_provider_default",
-        "libjni",
+        "libjni_legacy",
         "liblazy_static",
         "liblock_adapter",
         "librand",
