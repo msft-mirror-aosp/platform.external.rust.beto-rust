@@ -1,0 +1,14 @@
+package {
+    default_visibility: ["//external/rust/beto-rust:__subpackages__"],
+    default_applicable_licenses: ["external_rust_beto-rust_license"],
+}
+
+rust_library_rlib {
+    name: "liblock_adapter",
+    crate_name: "lock_adapter",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["lock_adapter/src/lib.rs"],
+    features: [
+        "std",
+    ],
+}

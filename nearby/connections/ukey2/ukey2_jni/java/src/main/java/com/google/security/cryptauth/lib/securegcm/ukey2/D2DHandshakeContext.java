@@ -28,25 +28,43 @@ public class D2DHandshakeContext {
     RESPONDER,
   }
 
+  public enum NextProtocol {
+    AES_256_GCM_SIV,
+    AES_256_CBC_HMAC_SHA256,
+  }
+
   private final long contextPtr;
 
   private static native boolean is_handshake_complete(long contextPtr) throws BadHandleException;
 
-  private static native long create_context(boolean isClient);
+  private static native long create_context(boolean isClient, int[] supported_next_protocols);
 
   private static native byte[] get_next_handshake_message(long contextPtr)
       throws BadHandleException;
 
   private static native void parse_handshake_message(long contextPtr, byte[] message)
-      throws BadHandleException, HandshakeException;
+      throws AlertException, BadHandleException, HandshakeException;
 
   private static native byte[] get_verification_string(long contextPtr, int length)
       throws BadHandleException, HandshakeException;
 
   private static native long to_connection_context(long contextPtr) throws HandshakeException;
 
-  public D2DHandshakeContext(@Nonnull Role role) {
-    this.contextPtr = create_context(role == Role.INITIATOR);
+  public D2DHandshakeContext(@Nonnull Role role) throws HandshakeException {
+    this(role, new NextProtocol[] {NextProtocol.AES_256_CBC_HMAC_SHA256});
+  }
+
+  public D2DHandshakeContext(@Nonnull Role role, @Nonnull NextProtocol[] nextProtocols)
+      throws HandshakeException {
+    if (nextProtocols.length < 1) {
+      throw new HandshakeException("Need more than one supported next protocol!");
+    }
+    int[] nextProtocolCodes = new int[nextProtocols.length];
+    for (int i = 0; i < nextProtocols.length; i++) {
+      nextProtocolCodes[i] = nextProtocols[i].ordinal();
+    }
+
+    this.contextPtr = create_context(role == Role.INITIATOR, nextProtocolCodes);
   }
 
   /**
@@ -54,8 +72,19 @@ public class D2DHandshakeContext {
    *
    * @return a D2DHandshakeContext for the role of initiator in the handshake.
    */
-  public static D2DHandshakeContext forInitiator() {
+  public static D2DHandshakeContext forInitiator() throws HandshakeException {
     return new D2DHandshakeContext(Role.INITIATOR);
+  }
+
+  /**
+   * Convenience constructor that creates a UKEY2 D2DHandshakeContext for the initiator role.
+   *
+   * @param nextProtocols Specification for the supported next protocols for this initiator.
+   * @return a D2DHandshakeContext for the role of initiator in the handshake.
+   */
+  public static D2DHandshakeContext forInitiator(NextProtocol[] nextProtocols)
+      throws HandshakeException {
+    return new D2DHandshakeContext(Role.INITIATOR, nextProtocols);
   }
 
   /**
@@ -63,8 +92,19 @@ public class D2DHandshakeContext {
    *
    * @return a D2DHandshakeContext for the role of responder/server in the handshake.
    */
-  public static D2DHandshakeContext forResponder() {
+  public static D2DHandshakeContext forResponder() throws HandshakeException {
     return new D2DHandshakeContext(Role.RESPONDER);
+  }
+
+  /**
+   * Convenience constructor that creates a UKEY2 D2DHandshakeContext for the initiator role.
+   *
+   * @param nextProtocols Specification for the supported next protocols for this responder.
+   * @return a D2DHandshakeContext for the role of responder/server in the handshake.
+   */
+  public static D2DHandshakeContext forResponder(NextProtocol[] nextProtocols)
+      throws HandshakeException {
+    return new D2DHandshakeContext(Role.RESPONDER, nextProtocols);
   }
 
   /**
@@ -90,10 +130,15 @@ public class D2DHandshakeContext {
    * Parses the handshake message.
    *
    * @param message - handshake message from the other side.
+   * @throws AlertException - Thrown if the message is unable to be parsed.
+   * @throws BadHandleException - Thrown if the handle is no longer valid, for example after calling
+   *     {@link D2DHandshakeContext#toConnectionContext()}
+   * @throws HandshakeException - Thrown if the handshake is not complete when this function is
+   *     called.
    */
   @Nonnull
   public void parseHandshakeMessage(@Nonnull byte[] message)
-      throws BadHandleException, HandshakeException {
+      throws AlertException, BadHandleException, HandshakeException {
     parse_handshake_message(contextPtr, message);
   }
 
@@ -106,7 +151,7 @@ public class D2DHandshakeContext {
    * @param length - The length of the returned verification string.
    * @return - The returned verification string as a byte array.
    * @throws BadHandleException - Thrown if the handle is no longer valid, for example after calling
-   *     {@link D2DHandshakeContext#toConnectionContext}
+   *     {@link D2DHandshakeContext#toConnectionContext()}
    * @throws HandshakeException - Thrown if the handshake is not complete when this function is
    *     called.
    */
