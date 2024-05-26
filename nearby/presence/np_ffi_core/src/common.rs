@@ -18,11 +18,10 @@ use array_view::ArrayView;
 use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_default::CryptoProviderImpl;
 use handle_map::HandleNotPresentError;
-use lock_adapter::std::{RwLock, RwLockWriteGuard};
+use lock_adapter::stdlib::{RwLock, RwLockWriteGuard};
 use lock_adapter::RwLock as _;
-use std::string::String;
 
-pub(crate) const DEFAULT_MAX_HANDLES: u32 = u32::MAX - 1;
+const MAX_HANDLES: u32 = u32::MAX - 1;
 
 /// Configuration for top-level constants to be used
 /// by the rest of the FFI which are independent of
@@ -41,34 +40,6 @@ pub struct CommonConfig {
     ///   assuming that that call completes successfully.
     /// - In all other cases, 16 shards will be used by default.
     num_shards: u8,
-
-    /// The maximum number of credential slabs which may be active
-    /// at any one time. By default, this value will be set to
-    /// `u32::MAX - 1`, which is the upper-bound on this value.
-    max_num_credential_slabs: u32,
-
-    /// The maximum number of credential books which may be active
-    /// at any one time. By default, this value will be set to
-    /// `u32::MAX - 1`, which is the upper-bound on this value.
-    max_num_credential_books: u32,
-
-    /// The maximum number of deserialized v0 advertisements
-    /// which may be active at any one time. By default, this
-    /// value will be set to `u32::MAX - 1`, which is the upper-bound
-    /// on this value.
-    max_num_deserialized_v0_advertisements: u32,
-
-    /// The maximum number of deserialized v1 advertisements
-    /// which may be active at any one time. By default, this
-    /// value will be set to `u32::MAX - 1`, which is the upper-bound
-    /// on this value.
-    max_num_deserialized_v1_advertisements: u32,
-
-    /// The maximum number of v1 advertisement builders
-    /// which may be active at any one time. By default, this
-    /// value will be set to `u32::MAX - 1`, which is the upper-bound
-    /// on this value.
-    max_num_v1_advertisement_builders: u32,
 }
 
 impl Default for CommonConfig {
@@ -79,14 +50,7 @@ impl Default for CommonConfig {
 
 impl CommonConfig {
     pub(crate) const fn new() -> Self {
-        Self {
-            num_shards: 0,
-            max_num_credential_slabs: DEFAULT_MAX_HANDLES,
-            max_num_credential_books: DEFAULT_MAX_HANDLES,
-            max_num_deserialized_v0_advertisements: DEFAULT_MAX_HANDLES,
-            max_num_deserialized_v1_advertisements: DEFAULT_MAX_HANDLES,
-            max_num_v1_advertisement_builders: DEFAULT_MAX_HANDLES,
-        }
+        Self { num_shards: 0 }
     }
     #[cfg(feature = "std")]
     pub(crate) fn num_shards(&self) -> u8 {
@@ -107,91 +71,22 @@ impl CommonConfig {
             self.num_shards
         }
     }
-    pub(crate) fn max_num_credential_slabs(&self) -> u32 {
-        self.max_num_credential_slabs
-    }
-    pub(crate) fn max_num_credential_books(&self) -> u32 {
-        self.max_num_credential_books
-    }
-    pub(crate) fn max_num_deserialized_v0_advertisements(&self) -> u32 {
-        self.max_num_deserialized_v0_advertisements
-    }
-    pub(crate) fn max_num_deserialized_v1_advertisements(&self) -> u32 {
-        self.max_num_deserialized_v1_advertisements
-    }
-    pub(crate) fn max_num_v1_advertisement_builders(&self) -> u32 {
-        self.max_num_v1_advertisement_builders
-    }
     pub(crate) fn set_num_shards(&mut self, num_shards: u8) {
         self.num_shards = num_shards
     }
+}
 
-    /// Sets the maximum number of active handles to credential-books
-    /// which may be active at any one time.
-    /// Max value: `u32::MAX - 1`.
-    pub fn set_max_num_credential_books(&mut self, max_num_credential_books: u32) {
-        self.max_num_credential_books = DEFAULT_MAX_HANDLES.min(max_num_credential_books)
-    }
-
-    /// Sets the maximum number of active handles to credential-slabs
-    /// which may be active at any one time.
-    /// Max value: `u32::MAX - 1`.
-    pub fn set_max_num_credential_slabs(&mut self, max_num_credential_slabs: u32) {
-        self.max_num_credential_slabs = DEFAULT_MAX_HANDLES.min(max_num_credential_slabs)
-    }
-
-    /// Sets the maximum number of active handles to deserialized v0
-    /// advertisements which may be active at any one time.
-    /// Max value: `u32::MAX - 1`.
-    pub fn set_max_num_deserialized_v0_advertisements(
-        &mut self,
-        max_num_deserialized_v0_advertisements: u32,
-    ) {
-        self.max_num_deserialized_v0_advertisements =
-            DEFAULT_MAX_HANDLES.min(max_num_deserialized_v0_advertisements)
-    }
-
-    /// Sets the maximum number of active handles to deserialized v1
-    /// advertisements which may be active at any one time.
-    /// Max value: `u32::MAX - 1`.
-    pub fn set_max_num_deserialized_v1_advertisements(
-        &mut self,
-        max_num_deserialized_v1_advertisements: u32,
-    ) {
-        self.max_num_deserialized_v1_advertisements =
-            DEFAULT_MAX_HANDLES.min(max_num_deserialized_v1_advertisements)
-    }
-    /// Sets the maximum number of active handles to v1 advertisement
-    /// builders which may be active at any one time.
-    /// Max value: `u32::MAX - 1`.
-    pub fn set_max_num_v1_advertisement_builders(
-        &mut self,
-        max_num_v1_advertisement_builders: u32,
-    ) {
-        self.max_num_v1_advertisement_builders =
-            DEFAULT_MAX_HANDLES.min(max_num_v1_advertisement_builders)
+pub(crate) fn default_handle_map_dimensions() -> handle_map::HandleMapDimensions {
+    handle_map::HandleMapDimensions {
+        num_shards: global_num_shards(),
+        max_active_handles: MAX_HANDLES,
     }
 }
 
 static COMMON_CONFIG: RwLock<CommonConfig> = RwLock::new(CommonConfig::new());
 
-pub(crate) fn global_num_shards() -> u8 {
+fn global_num_shards() -> u8 {
     COMMON_CONFIG.read().num_shards()
-}
-pub(crate) fn global_max_num_credential_slabs() -> u32 {
-    COMMON_CONFIG.read().max_num_credential_slabs()
-}
-pub(crate) fn global_max_num_credential_books() -> u32 {
-    COMMON_CONFIG.read().max_num_credential_books()
-}
-pub(crate) fn global_max_num_deserialized_v0_advertisements() -> u32 {
-    COMMON_CONFIG.read().max_num_deserialized_v0_advertisements()
-}
-pub(crate) fn global_max_num_deserialized_v1_advertisements() -> u32 {
-    COMMON_CONFIG.read().max_num_deserialized_v1_advertisements()
-}
-pub(crate) fn global_max_num_v1_advertisement_builders() -> u32 {
-    COMMON_CONFIG.read().max_num_v1_advertisement_builders()
 }
 
 /// Sets an override to the number of shards to employ in the NP FFI's
@@ -213,69 +108,43 @@ pub fn global_config_set_num_shards(num_shards: u8) {
     config.set_num_shards(num_shards);
 }
 
-/// Sets the maximum number of active handles to credential slabs
-/// which may be active at any one time. Max value: `u32::MAX - 1`.
-///
-/// Setting this value will have no effect if the handle-maps for the
-/// API have already begun being used by the client code, and any
-/// values set will take effect upon the first usage of any API
-/// call utilizing credential slabs.
-pub fn global_config_set_max_num_credential_slabs(max_num_credential_slabs: u32) {
-    let mut config = COMMON_CONFIG.write();
-    config.set_max_num_credential_slabs(max_num_credential_slabs);
-}
-/// Sets the maximum number of active handles to credential books
-/// which may be active at any one time. Max value: `u32::MAX - 1`.
-///
-/// Setting this value will have no effect if the handle-maps for the
-/// API have already begun being used by the client code, and any
-/// values set will take effect upon the first usage of any API
-/// call utilizing credential books.
-pub fn global_config_set_max_num_credential_books(max_num_credential_books: u32) {
-    let mut config = COMMON_CONFIG.write();
-    config.set_max_num_credential_books(max_num_credential_books);
+/// Holds the count of handles currently allocated for each handle type
+#[repr(C)]
+pub struct CurrentHandleAllocations {
+    cred_book: u32,
+    cred_slab: u32,
+    decrypted_metadata: u32,
+    v0_payload: u32,
+    legible_v1_sections: u32,
+    v0_advertisement_builder: u32,
+    v1_advertisement_builder: u32,
 }
 
-/// Sets the maximum number of active handles to deserialized v0
-/// advertisements which may be active at any one time.
-/// Max value: `u32::MAX - 1`.
-///
-/// Setting this value will have no effect if the handle-maps for the
-/// API have already begun being used by the client code, and any
-/// values set will take effect upon the first usage of any API
-/// call which references or returns a deserialized V0 advertisement.
-pub fn global_config_set_max_num_deserialized_v0_advertisements(
-    max_num_deserialized_v0_advertisements: u32,
-) {
-    let mut config = COMMON_CONFIG.write();
-    config.set_max_num_deserialized_v0_advertisements(max_num_deserialized_v0_advertisements);
+/// Returns the count of currently allocated handle types being held by the rust layer. Useful
+/// for debugging, logging, and testing.
+pub fn global_config_get_current_allocation_count() -> CurrentHandleAllocations {
+    CurrentHandleAllocations {
+        cred_book: crate::credentials::credential_book::get_current_allocation_count(),
+        cred_slab: crate::credentials::credential_slab::get_current_allocation_count(),
+        decrypted_metadata: crate::deserialize::decrypted_metadata::get_current_allocation_count(),
+        v0_payload: crate::deserialize::v0::v0_payload::get_current_allocation_count(),
+        legible_v1_sections:
+            crate::deserialize::v1::legible_v1_sections::get_current_allocation_count(),
+        v0_advertisement_builder:
+            crate::serialize::v0::advertisement_builder::get_current_allocation_count(),
+        v1_advertisement_builder:
+            crate::serialize::v1::advertisement_builder::get_current_allocation_count(),
+    }
 }
-
-/// Sets the maximum number of active handles to deserialized v1
-/// advertisements which may be active at any one time.
-/// Max value: `u32::MAX - 1`.
-///
-/// Setting this value will have no effect if the handle-maps for the
-/// API have already begun being used by the client code, and any
-/// values set will take effect upon the first usage of any API
-/// call which references or returns a deserialized V1 advertisement.
-pub fn global_config_set_max_num_deserialized_v1_advertisements(
-    max_num_deserialized_v1_advertisements: u32,
-) {
-    let mut config = COMMON_CONFIG.write();
-    config.set_max_num_deserialized_v1_advertisements(max_num_deserialized_v1_advertisements);
-}
-
-// API surfaces:
 
 /// A result-type enum which tells the caller whether/not a deallocation
 /// succeeded or failed due to the requested handle not being present.
 #[repr(C)]
 pub enum DeallocateResult {
     /// The requested handle to deallocate was not present in the map
-    NotPresent = 0,
+    NotPresent = 1,
     /// The object behind the handle was successfully deallocated
-    Success = 1,
+    Success = 2,
 }
 
 impl From<Result<(), HandleNotPresentError>> for DeallocateResult {
@@ -319,6 +188,7 @@ pub struct ByteBuffer<const N: usize> {
 }
 
 /// A FFI safe wrapper of a fixed size array
+#[derive(Clone)]
 #[repr(C)]
 pub struct FixedSizeArray<const N: usize>([u8; N]);
 
@@ -330,6 +200,11 @@ impl<const N: usize> FixedSizeArray<N> {
     /// Yields a slice of the bytes
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_slice()
+    }
+    /// De-structures this FFI-compatible fixed-size array
+    /// into a bare Rust fixed size array.
+    pub fn into_array(self) -> [u8; N] {
+        self.0
     }
 }
 
@@ -377,42 +252,15 @@ pub(crate) fn get_global_crypto_rng() -> RwLockWriteGuard<'static, LazyInitCrypt
     CRYPTO_RNG.write()
 }
 
-/// The DE type for an encrypted identity
-#[derive(Clone, Copy)]
-#[repr(u8)]
-pub enum EncryptedIdentityType {
-    /// Identity for broadcasts to nearby devices with the same
-    /// logged-in-account (for some account).
-    Private = 1,
-    /// Identity for broadcasts to nearby devices which this
-    /// device has declared to trust.
-    Trusted = 2,
-    /// Identity for broadcasts to devices which have been provisioned
-    /// offline with this device.
-    Provisioned = 4,
-}
-
-impl From<EncryptedIdentityType> for np_adv::de_type::EncryptedIdentityDataElementType {
-    fn from(val: EncryptedIdentityType) -> np_adv::de_type::EncryptedIdentityDataElementType {
-        use np_adv::de_type::EncryptedIdentityDataElementType;
-        match val {
-            EncryptedIdentityType::Private => EncryptedIdentityDataElementType::Private,
-            EncryptedIdentityType::Trusted => EncryptedIdentityDataElementType::Trusted,
-            EncryptedIdentityType::Provisioned => EncryptedIdentityDataElementType::Provisioned,
-        }
-    }
-}
-
-impl From<np_adv::de_type::EncryptedIdentityDataElementType> for EncryptedIdentityType {
-    fn from(value: np_adv::de_type::EncryptedIdentityDataElementType) -> Self {
-        use np_adv::de_type::EncryptedIdentityDataElementType;
-        match value {
-            EncryptedIdentityDataElementType::Private => Self::Private,
-            EncryptedIdentityDataElementType::Trusted => Self::Trusted,
-            EncryptedIdentityDataElementType::Provisioned => Self::Provisioned,
-        }
-    }
-}
+/// Error returned if the bit representation of a supposedly-Rust-constructed
+/// -and-validated type actually doesn't correspond to the format of the
+/// data structure expected on the Rust side of the boundary, and performing
+/// further operations on the structure would yield unintended behavior.
+/// If this kind of error is being raised, the foreign lang code must
+/// be messing with stack-allocated data structures for this library
+/// in an entirely unexpected way.
+#[derive(Debug)]
+pub struct InvalidStackDataStructure;
 
 /// Error raised when attempting to cast an enum to
 /// one of its variants, but the value is actually
