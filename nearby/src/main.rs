@@ -15,9 +15,10 @@
 extern crate core;
 
 use clap::Parser as _;
-use cmd_runner::run_cmd_shell;
+use cmd_runner::{license_checker::LicenseSubcommand, run_cmd, run_cmd_shell, YellowStderr};
 use env_logger::Env;
-use std::{env, path};
+use license::LICENSE_CHECKER;
+use std::{env, ffi::OsString, path};
 
 mod crypto_ffi;
 mod ffi;
@@ -35,28 +36,34 @@ fn main() -> anyhow::Result<()> {
     );
 
     match cli.subcommand {
-        Subcommand::CheckEverything { ref check_options } => {
-            check_everything(&root_dir, check_options)?
+        Subcommand::RunDefaultChecks(ref check_options) => {
+            run_default_checks(&root_dir, check_options)?;
+            print!(concat!(
+                "Congratulations, the default checks passed. Since you like quality, here are\n",
+                "some more checks you may like:\n",
+                "    cargo run -- run-rust-fuzzers\n",
+                "    cargo run -- check-stack-usage\n",
+            ));
         }
+        Subcommand::VerifyCi { ref check_options } => verify_ci(&root_dir, check_options)?,
         Subcommand::CleanEverything => clean_everything(&root_dir)?,
+        Subcommand::CheckFormat(ref options) => check_format(&root_dir, options)?,
         Subcommand::CheckWorkspace(ref options) => check_workspace(&root_dir, options)?,
-        Subcommand::FfiCheckEverything(ref options) => ffi::check_everything(&root_dir, options)?,
-        Subcommand::BoringsslCheckEverything(ref options) => {
-            crypto_ffi::boringssl_check_everything(&root_dir, options)?
-        }
+        Subcommand::CheckAllFfi(ref options) => ffi::check_ffi(&root_dir, options)?,
         Subcommand::BuildBoringssl => crypto_ffi::build_boringssl(&root_dir)?,
         Subcommand::CheckBoringssl(ref options) => crypto_ffi::check_boringssl(&root_dir, options)?,
-        Subcommand::PrepareRustOpenssl => crypto_ffi::prepare_patched_rust_openssl(&root_dir)?,
-        Subcommand::CheckOpenssl(ref options) => crypto_ffi::check_openssl(&root_dir, options)?,
+        Subcommand::CheckBoringsslAtLatest(ref options) => {
+            crypto_ffi::check_boringssl_at_head(&root_dir, options)?
+        }
         Subcommand::RunRustFuzzers => fuzzers::run_rust_fuzzers(&root_dir)?,
-        Subcommand::BuildFfiFuzzers => fuzzers::build_ffi_fuzzers(&root_dir)?,
-        Subcommand::CheckLicenseHeaders => license::check_license_headers(&root_dir)?,
-        Subcommand::AddLicenseHeaders => license::add_license_headers(&root_dir)?,
-        Subcommand::CheckLdtFfi => ffi::check_ldt_ffi_rust(&root_dir)?,
+        Subcommand::CheckFuzztest => fuzzers::build_fuzztest_unit_tests(&root_dir)?,
+        Subcommand::License(license_subcommand) => {
+            license_subcommand.run(&LICENSE_CHECKER, &root_dir)?
+        }
         Subcommand::CheckUkey2Ffi(ref options) => ukey2::check_ukey2_ffi(&root_dir, options)?,
         Subcommand::RunUkey2JniTests => jni::run_ukey2_jni_tests(&root_dir)?,
+        Subcommand::RunNpJavaFfiTests => jni::run_np_java_ffi_tests(&root_dir)?,
         Subcommand::CheckLdtJni => jni::check_ldt_jni(&root_dir)?,
-        Subcommand::CheckNpFfi(ref options) => ffi::check_np_ffi_rust(&root_dir, options)?,
         Subcommand::CheckLdtCmake(ref options) => ffi::check_ldt_cmake(&root_dir, options)?,
         Subcommand::CheckNpFfiCmake(ref options) => ffi::check_np_ffi_cmake(&root_dir, options)?,
         Subcommand::RunKotlinTests => jni::run_kotlin_tests(&root_dir)?,
@@ -65,28 +72,73 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn check_format(root: &path::Path, options: &FormatterOptions) -> anyhow::Result<()> {
+    // Rust format
+    {
+        let fmt_command = if options.reformat { "cargo fmt" } else { "cargo fmt --check" };
+        run_cmd_shell(root, fmt_command)?;
+    }
+
+    // Java format. This uses the jar downloaded as part of the CI script or the local
+    // `google-java-format` executable. The jar file path can be overridden with the
+    // `GOOGLE_JAVA_FORMAT_ALL_DEPS_JAR` environment variable. See
+    // <go/google-java-format#installation> for setup instructions for your dev environment if
+    // needed.
+    {
+        let jar_path = std::env::var("GOOGLE_JAVA_FORMAT_ALL_DEPS_JAR").unwrap_or_else(|_| {
+            "/opt/google-java-format/google-java-format-all-deps.jar".to_owned()
+        });
+
+        let mut fmt_command: Vec<OsString> = Vec::new();
+
+        if path::PathBuf::from(&jar_path).exists() {
+            fmt_command.extend(["java".into(), "-jar".into(), jar_path.into()]);
+        } else {
+            fmt_command.push("google-java-format".into());
+        }
+
+        if options.reformat {
+            fmt_command.push("-i".into());
+        } else {
+            fmt_command.extend(["--set-exit-if-changed".into(), "--dry-run".into()]);
+        }
+
+        let root_str =
+            glob::Pattern::escape(root.to_str().expect("Non-unicode paths are not supported"));
+        let search = format!("{}/**/*.java", root_str);
+        let java_files: Vec<_> = glob::glob(&search).unwrap().filter_map(Result::ok).collect();
+
+        for file_set in java_files.chunks(100) {
+            let mut args = fmt_command[1..].to_vec();
+            args.extend(file_set.iter().map(OsString::from));
+
+            run_cmd::<YellowStderr, _, _, _>(root, &fmt_command[0], args)?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn check_workspace(root: &path::Path, options: &CheckOptions) -> anyhow::Result<()> {
     log::info!("Running cargo checks on workspace");
 
-    let fmt_command = if options.reformat { "cargo fmt" } else { "cargo fmt --check" };
+    // ensure formatting is correct (Check for it first because it is fast compared to running tests)
+    check_format(root, &options.formatter_options)?;
 
     for cargo_cmd in [
-        // ensure formatting is correct (Check for it first because it is fast compared to running tests)
-        fmt_command,
         // make sure everything compiles
         "cargo check --workspace --all-targets --quiet",
         // run all the tests
-        //TODO: re-enable the openssl tests, this was potentially failing due to UB code in the
-        // upstream rust-openssl crate's handling of empty slices. This repros consistently when
-        // using the rust-openssl crate backed by openssl-sys on Ubuntu 20.04.
-        "cargo test --workspace --quiet --exclude crypto_provider_openssl -- --color=always",
+        &options.cargo_options.test("check_workspace", "--workspace --quiet"),
         // Test ukey2 builds with different crypto providers
-        "cargo test -p ukey2_connections -p ukey2_rs --no-default-features --features test_rustcrypto",
-        "cargo test -p ukey2_connections -p ukey2_rs --no-default-features --features test_openssl",
+        &options.cargo_options.test(
+            "check_workspace_ukey2",
+            "-p ukey2_connections -p ukey2_rs --no-default-features --features test_rustcrypto",
+        ),
         // ensure the docs are valid (cross-references to other code, etc)
         concat!(
-            "RUSTDOCFLAGS='--deny warnings -Z unstable-options --enable-index-page --generate-link-to-definition' ",
-            "cargo +nightly doc --quiet --workspace --no-deps --document-private-items ",
+            "RUSTDOCFLAGS='--deny warnings' ",
+            "cargo doc --quiet --workspace --no-deps --document-private-items ",
             "--target-dir target/dist_docs",
         ),
         "cargo clippy --all-targets --workspace -- --deny warnings",
@@ -98,29 +150,37 @@ pub fn check_workspace(root: &path::Path, options: &CheckOptions) -> anyhow::Res
     Ok(())
 }
 
-/// Runs checks to ensure lints are passing and all targets are building
-pub fn check_everything(root: &path::Path, check_options: &CheckOptions) -> anyhow::Result<()> {
-    license::check_license_headers(root)?;
+/// Runs default checks that are suiable for verifying a local change.
+pub fn run_default_checks(root: &path::Path, check_options: &CheckOptions) -> anyhow::Result<()> {
+    license::LICENSE_CHECKER.check(root)?;
     check_workspace(root, check_options)?;
     crypto_ffi::check_boringssl(root, &check_options.cargo_options)?;
-    crypto_ffi::check_openssl(root, &check_options.cargo_options)?;
-    ffi::check_everything(root, &check_options.cargo_options)?;
-    jni::check_ldt_jni(root)?;
-    jni::run_kotlin_tests(root)?;
-    jni::run_ukey2_jni_tests(root)?;
+    ffi::check_ffi(root, &check_options.cargo_options)?;
+    if !cfg!(target_os = "windows") {
+        fuzzers::build_fuzztest_unit_tests(root)?;
+    }
+    crypto_ffi::check_boringssl_at_head(root, &check_options.cargo_options)?;
     ukey2::check_ukey2_ffi(root, &check_options.cargo_options)?;
-    fuzzers::run_rust_fuzzers(root)?;
-    fuzzers::build_ffi_fuzzers(root)?;
+    if !cfg!(target_os = "windows") {
+        // Test below requires Java SE 9, but on Windows we only have Java SE 8 installed
+        jni::run_np_java_ffi_tests(root)?;
+    }
+    jni::run_ukey2_jni_tests(root)?;
+    Ok(())
+}
 
+/// Runs checks to ensure lints are passing and all targets are building
+pub fn verify_ci(root: &path::Path, check_options: &CheckOptions) -> anyhow::Result<()> {
+    run_default_checks(root, check_options)?;
     Ok(())
 }
 
 pub fn clean_everything(root: &path::Path) -> anyhow::Result<()> {
     run_cmd_shell(root, "cargo clean")?;
-    run_cmd_shell(&root.join("presence/ldt_np_adv_ffi"), "cargo clean")?;
     run_cmd_shell(&root.join("presence/np_c_ffi"), "cargo clean")?;
     run_cmd_shell(&root.join("crypto/crypto_provider_boringssl"), "cargo clean")?;
     run_cmd_shell(&root.join("connections/ukey2/ukey2_c_ffi"), "cargo clean")?;
+    run_cmd_shell(&root.join("presence/np_java_ffi"), "./gradlew :clean")?;
     Ok(())
 }
 
@@ -132,61 +192,61 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug, Clone)]
 enum Subcommand {
-    /// Checks everything in beto-rust
-    CheckEverything {
+    /// Runs all of the checks that CI runs
+    VerifyCi {
         #[command(flatten)]
         check_options: CheckOptions,
     },
+    /// Runs the default set of checks suitable for verifying local changes.
+    RunDefaultChecks(CheckOptions),
     /// Cleans the main workspace and all sub projects - useful if upgrading rust compiler version
     /// and need dependencies to be compiled with the same version
     CleanEverything,
+    /// Checks code formatting
+    CheckFormat(FormatterOptions),
     /// Checks everything included in the top level workspace
     CheckWorkspace(CheckOptions),
-    /// Checks everything related to the boringssl version (equivalent of running check-boringssl
-    /// + check-openssl)
-    BoringsslCheckEverything(CargoOptions),
     /// Clones boringssl and uses bindgen to generate the rust crate
     BuildBoringssl,
     /// Run crypto provider tests using boringssl backend
     CheckBoringssl(CargoOptions),
-    /// Applies AOSP specific patches to the 3p `openssl` crate so that it can use a boringssl
-    /// backend
-    PrepareRustOpenssl,
-    /// Run crypto provider tests using openssl crate with boringssl backend
-    CheckOpenssl(CargoOptions),
+    /// Checks out latest boringssl commit and runs our tests against it
+    CheckBoringsslAtLatest(CargoOptions),
     /// Build and run pure Rust fuzzers for 10000 runs
     RunRustFuzzers,
-    /// Build FFI fuzzers
-    BuildFfiFuzzers,
+    /// Builds and runs fuzztest property based unit tests
+    CheckFuzztest,
     /// Builds and runs tests for all C/C++ projects. This is a combination of CheckNpFfi,
     /// CheckLdtFfi, and CheckCmakeBuildAndTests
-    FfiCheckEverything(CargoOptions),
-    /// Builds the crate checks the cbindgen generation of C/C++ bindings
-    CheckNpFfi(CargoOptions),
-    /// Builds ldt_np_adv_ffi crate with all possible different sets of feature flags
-    CheckLdtFfi,
+    CheckAllFfi(CargoOptions),
     /// Checks the CMake build and runs all of the C/C++ tests
     CheckLdtCmake(CargoOptions),
     /// Checks the CMake build and runs all of the C/C++ tests
     CheckNpFfiCmake(CargoOptions),
-    /// Checks the workspace 3rd party crates and makes sure they have a valid license
-    CheckLicenseHeaders,
-    /// Generate new headers for any files that are missing them
-    AddLicenseHeaders,
+    #[command(flatten)]
+    License(LicenseSubcommand),
     /// Builds and runs tests for the UKEY2 FFI
     CheckUkey2Ffi(CargoOptions),
-    /// Checks the build of ldt_jni wrapper with non default features, ie rust-openssl, and boringssl
+    /// Checks the build of ldt_jni wrapper with non default features, ie boringssl
     CheckLdtJni,
     /// Runs the kotlin tests of the LDT Jni API
     RunKotlinTests,
     /// Checks the build of the ukey2_jni wrapper and runs tests
     RunUkey2JniTests,
+    /// Checks the build of the np_java_ffi wrapper and runs tests
+    RunNpJavaFfiTests,
+}
+
+#[derive(clap::Args, Debug, Clone, Default)]
+pub struct FormatterOptions {
+    #[arg(long, help = "reformat files files in the workspace with the code formatter")]
+    reformat: bool,
 }
 
 #[derive(clap::Args, Debug, Clone, Default)]
 pub struct CheckOptions {
-    #[arg(long, help = "reformat files with cargo fmt")]
-    reformat: bool,
+    #[command(flatten)]
+    formatter_options: FormatterOptions,
     #[command(flatten)]
     cargo_options: CargoOptions,
 }
@@ -195,4 +255,23 @@ pub struct CheckOptions {
 pub struct CargoOptions {
     #[arg(long, help = "whether to run cargo with --locked")]
     locked: bool,
+    #[arg(long, help = "gather coverage metrics")]
+    coverage: bool,
+}
+
+impl CargoOptions {
+    /// Run `cargo test` or `cargo llvm-cov` depending on the configured options.
+    pub fn test(&self, tag: &str, args: impl AsRef<str>) -> String {
+        format!(
+            "cargo {subcommand} {locked} {args} {cov_args} -- --color=always",
+            subcommand = if self.coverage { "llvm-cov" } else { "test" },
+            locked = if self.locked { "--locked" } else { "" },
+            args = args.as_ref(),
+            cov_args = if self.coverage {
+                format!("--lcov --output-path \"target/{tag}.info\"")
+            } else {
+                String::default()
+            },
+        )
+    }
 }

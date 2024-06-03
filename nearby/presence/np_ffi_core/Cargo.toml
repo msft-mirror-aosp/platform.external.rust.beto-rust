@@ -18,9 +18,10 @@ crypto_provider.workspace = true
 crypto_provider_default = { workspace = true, default-features = false }
 lock_adapter.workspace = true
 lazy_static.workspace = true
+strum.workspace = true
+strum_macros.workspace = true
 
 [features]
 default = ["rustcrypto"]
 rustcrypto = ["crypto_provider_default/rustcrypto", "crypto_provider_default/std"]
-opensslbssl = ["crypto_provider_default/opensslbssl"]
 boringssl = ["crypto_provider_default/boringssl"]

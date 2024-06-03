@@ -6,7 +6,6 @@ publish.workspace = true
 
 [dependencies]
 ukey2_connections = { path = "../ukey2_connections" }
-ukey2_rs = { path = "../ukey2" }
 cfg-if.workspace = true
 crypto_provider_default.workspace = true
 lock_adapter = {workspace = true, features = ["spin"]}
@@ -19,7 +18,6 @@ rand_chacha.workspace = true
 [features]
 default = ["rustcrypto", "std"]
 std = ["lock_adapter/std"]
-openssl = ["crypto_provider_default/openssl", "std"]
 boringssl = ["crypto_provider_default/boringssl", "std"]
 rustcrypto = ["crypto_provider_default/rustcrypto"]
 
