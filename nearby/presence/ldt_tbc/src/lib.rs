@@ -12,16 +12,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![forbid(unsafe_code)]
-#![deny(
-    missing_docs,
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::expect_used
-)]
 
 //! Defining traits for an LDT specific Tweakable Block Cipher
+
+#[cfg(feature = "std")]
+extern crate std;
 
 use crypto_provider::{CryptoProvider, CryptoRng};
 

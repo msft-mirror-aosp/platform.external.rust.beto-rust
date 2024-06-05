@@ -8,5 +8,8 @@ boringssl-build/
 cmake-build/
 nearby/presence/lib/
 target/
-nearby/connections/ukey2/ukey2_c_ffi/cpp/build
+nearby/connections/ukey2/ukey2_c_ffi/cpp/build/
+nearby/presence/ldt_np_jni/java/LdtNpJni/build/
 **/auth_token.txt
+/bazel-*
+/.clwb/.bazelproject

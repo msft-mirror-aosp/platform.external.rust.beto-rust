@@ -24,7 +24,9 @@
 //! from the handshake context once the handshake is complete, and controls the encryption and
 //! decryption of the payload messages.
 
-#![deny(missing_docs)]
+#![allow(clippy::expect_used)]
+//TODO: remove this and fix instances of unwrap
+#![allow(clippy::unwrap_used, clippy::panic)]
 
 mod crypto_utils;
 mod d2d_connection_context_v1;
@@ -40,4 +42,4 @@ pub use d2d_handshake_context::{
     D2DHandshakeContext, HandleMessageError, HandshakeError, InitiatorD2DHandshakeContext,
     ServerD2DHandshakeContext,
 };
-pub use ukey2_rs::HandshakeImplementation;
+pub use ukey2_rs::{HandshakeImplementation, NextProtocol};

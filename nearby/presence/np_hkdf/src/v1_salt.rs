@@ -13,46 +13,45 @@
 // limitations under the License.
 
 //! Salt used in a V1 advertisement.
-use crate::np_hkdf;
-use core::fmt;
-use crypto_provider::hkdf::Hkdf;
-use crypto_provider::CryptoProvider;
+use crate::np_salt_hkdf;
+use crypto_provider::{hkdf::Hkdf, CryptoProvider, CryptoRng, FromCryptoRng};
+
+/// Length of a V1 extended salt
+pub const EXTENDED_SALT_LEN: usize = 16;
 
 /// Salt optionally included in V1 advertisement header.
 ///
 /// The salt is never used directly; rather, a derived salt should be extracted as needed for any
 /// section or DE that requires it.
-#[derive(Clone)]
-pub struct V1Salt<C>
-where
-    C: CryptoProvider,
-{
-    // kept around for Eq and Debug impl, should not be exposed
-    data: [u8; 16],
-    hkdf: C::HkdfSha256,
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct ExtendedV1Salt {
+    data: [u8; EXTENDED_SALT_LEN],
 }
 
-impl<C: CryptoProvider> V1Salt<C> {
-    /// Derive a salt for a particular section and DE, if applicable.
+impl ExtendedV1Salt {
+    /// Derive a salt for a particular DE, if applicable.
     ///
     /// Returns none if the requested size is larger than HKDF allows or if offset arithmetic
     /// overflows.
-    pub fn derive<const N: usize>(&self, de: Option<DataElementOffset>) -> Option<[u8; N]> {
+    pub fn derive<const N: usize, C: CryptoProvider>(
+        &self,
+        de: Option<DataElementOffset>,
+    ) -> Option<[u8; N]> {
+        let hkdf = np_salt_hkdf::<C>(&self.data);
         let mut arr = [0_u8; N];
         // 0-based offsets -> 1-based indices w/ 0 indicating not present
-        self.hkdf
-            .expand_multi_info(
-                &[
-                    b"V1 derived salt",
-                    &de.and_then(|d| d.offset.checked_add(1))
-                        .and_then(|o| o.try_into().ok())
-                        .unwrap_or(0_u32)
-                        .to_be_bytes(),
-                ],
-                &mut arr,
-            )
-            .map(|_| arr)
-            .ok()
+        hkdf.expand_multi_info(
+            &[
+                b"V1 derived salt",
+                &de.and_then(|d| d.offset.checked_add(1))
+                    .map(|o| o.into())
+                    .unwrap_or(0_u32)
+                    .to_be_bytes(),
+            ],
+            &mut arr,
+        )
+        .map(|_| arr)
+        .ok()
     }
 
     /// Returns the salt bytes as a slice
@@ -60,41 +59,34 @@ impl<C: CryptoProvider> V1Salt<C> {
         self.data.as_slice()
     }
 
+    /// Returns the salt bytes as an array
+    pub fn into_array(self) -> [u8; EXTENDED_SALT_LEN] {
+        self.data
+    }
+
     /// Returns the salt bytes as a reference to an array
-    pub fn as_array_ref(&self) -> &[u8; 16] {
+    pub fn bytes(&self) -> &[u8; EXTENDED_SALT_LEN] {
         &self.data
     }
 }
 
-impl<C: CryptoProvider> From<[u8; 16]> for V1Salt<C> {
-    fn from(arr: [u8; 16]) -> Self {
-        Self {
-            data: arr,
-            hkdf: np_hkdf::<C>(&arr),
-        }
+impl From<[u8; EXTENDED_SALT_LEN]> for ExtendedV1Salt {
+    fn from(arr: [u8; EXTENDED_SALT_LEN]) -> Self {
+        Self { data: arr }
     }
 }
 
-impl<C: CryptoProvider> PartialEq<Self> for V1Salt<C> {
-    fn eq(&self, other: &Self) -> bool {
-        // no need to compare hkdf (which it doesn't allow anyway)
-        self.data == other.data
+impl FromCryptoRng for ExtendedV1Salt {
+    fn new_random<R: CryptoRng>(rng: &mut R) -> Self {
+        rng.gen::<[u8; EXTENDED_SALT_LEN]>().into()
     }
 }
 
-impl<C: CryptoProvider> Eq for V1Salt<C> {}
-
-impl<C: CryptoProvider> fmt::Debug for V1Salt<C> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.data.fmt(f)
-    }
-}
-
-/// Offset of a data element in its containing section, used with [V1Salt].
+/// Offset of a data element in its containing section, used with [ExtendedV1Salt].
 #[derive(PartialEq, Eq, Debug, Clone, Copy, PartialOrd, Ord)]
 pub struct DataElementOffset {
     /// 0-based offset of the DE in the advertisement
-    offset: usize,
+    offset: u8,
 }
 
 impl DataElementOffset {
@@ -102,7 +94,7 @@ impl DataElementOffset {
     pub const ZERO: DataElementOffset = Self { offset: 0 };
 
     /// Returns the offset as a usize
-    pub fn as_usize(&self) -> usize {
+    pub fn as_u8(&self) -> u8 {
         self.offset
     }
 
@@ -110,14 +102,12 @@ impl DataElementOffset {
     ///
     /// Does not handle overflow as there can't be more than 2^8 DEs in a section.
     pub const fn incremented(&self) -> Self {
-        Self {
-            offset: self.offset + 1,
-        }
+        Self { offset: self.offset + 1 }
     }
 }
 
-impl From<usize> for DataElementOffset {
-    fn from(num: usize) -> Self {
+impl From<u8> for DataElementOffset {
+    fn from(num: u8) -> Self {
         Self { offset: num }
     }
 }

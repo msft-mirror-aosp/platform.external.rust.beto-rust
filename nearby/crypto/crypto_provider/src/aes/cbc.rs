@@ -14,7 +14,10 @@
 
 //! Traits for AES-CBC 256 with PKCS7 padding.
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
+use crate::tinyvec::SliceVec;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 use super::Aes256Key;
@@ -24,15 +27,54 @@ pub type AesCbcIv = [u8; 16];
 
 /// Trait for implementing AES-CBC with PKCS7 padding.
 pub trait AesCbcPkcs7Padded {
+    /// Calculate the padded output length (e.g. output of `encrypt`) from the unpadded length (e.g.
+    /// input message of `encrypt`).
+    #[allow(clippy::expect_used)]
+    fn padded_output_len(unpadded_len: usize) -> usize {
+        (unpadded_len - (unpadded_len % 16))
+            .checked_add(16)
+            .expect("Padded output length is larger than usize::MAX")
+    }
+
     /// Encrypt message using `key` and `iv`, returning a ciphertext.
+    #[cfg(feature = "alloc")]
     fn encrypt(key: &Aes256Key, iv: &AesCbcIv, message: &[u8]) -> Vec<u8>;
+
+    /// Encrypt message using `key` and `iv` in-place in the given `message` vec. The given slice
+    /// vec should have enough capacity to contain both the ciphertext and the padding (which can be
+    /// calculated from `padded_output_len()`). If it doesn't have enough capacity, an error will be
+    /// returned. The contents of the input `message` buffer is undefined in that case.
+    fn encrypt_in_place(
+        key: &Aes256Key,
+        iv: &AesCbcIv,
+        message: &mut SliceVec<u8>,
+    ) -> Result<(), EncryptionError>;
+
     /// Decrypt ciphertext using `key` and `iv`, returning the original message if `Ok()` otherwise
     /// a `DecryptionError` indicating the type of error that occurred while decrypting.
+    #[cfg(feature = "alloc")]
     fn decrypt(
         key: &Aes256Key,
         iv: &AesCbcIv,
         ciphertext: &[u8],
     ) -> Result<Vec<u8>, DecryptionError>;
+
+    /// Decrypt ciphertext using `key` and `iv` and unpad it in-place. Returning the original
+    /// message if `Ok()` otherwise a `DecryptionError` indicating the type of error that occurred
+    /// while decrypting. In that case, the contents of the `ciphertext` buffer is undefined.
+    fn decrypt_in_place(
+        key: &Aes256Key,
+        iv: &AesCbcIv,
+        ciphertext: &mut SliceVec<u8>,
+    ) -> Result<(), DecryptionError>;
+}
+
+/// Error type for describing what went wrong encrypting a message.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EncryptionError {
+    /// Failed to add PKCS7 padding to the output when encrypting a message. This typically happens
+    /// when the given output buffer does not have enough capacity to append the padding.
+    PaddingFailed,
 }
 
 /// Error type for describing what went wrong decrypting a ciphertext.
@@ -44,55 +86,64 @@ pub enum DecryptionError {
     BadPadding,
 }
 
-/// Module for testing implementations of this crate.
-#[cfg(feature = "testing")]
-pub mod testing {
-    use super::{Aes256Key, AesCbcIv, AesCbcPkcs7Padded};
-    pub use crate::testing::prelude::*;
-    use core::marker::PhantomData;
-    use hex_literal::hex;
-    use rstest_reuse::template;
+#[cfg(test)]
+mod test {
+    #[cfg(feature = "alloc")]
+    extern crate alloc;
+    #[cfg(feature = "alloc")]
+    use alloc::vec::Vec;
 
-    /// Tests for AES-256-CBC encryption
-    pub fn aes_256_cbc_test_encrypt<A: AesCbcPkcs7Padded>(_marker: PhantomData<A>) {
-        // http://google3/third_party/wycheproof/testvectors/aes_cbc_pkcs5_test.json;l=1492;rcl=264817632
-        let key: Aes256Key =
-            hex!("665a02bc265a66d01775091da56726b6668bfd903cb7af66fb1b78a8a062e43c").into();
-        let iv: AesCbcIv = hex!("3fb0d5ecd06c71150748b599595833cb");
-        let msg = hex!("3f56935def3f");
-        let expected_ciphertext = hex!("3f3f39697bd7e88d85a14132be1cbc48");
-        assert_eq!(A::encrypt(&key, &iv, &msg), expected_ciphertext);
+    use crate::aes::Aes256Key;
+    use crate::tinyvec::SliceVec;
+
+    use super::{AesCbcIv, AesCbcPkcs7Padded, DecryptionError, EncryptionError};
+
+    #[test]
+    fn test_padded_output_len() {
+        assert_eq!(AesCbcPkcs7PaddedStub::padded_output_len(0), 16);
+        assert_eq!(AesCbcPkcs7PaddedStub::padded_output_len(15), 16);
+        assert_eq!(AesCbcPkcs7PaddedStub::padded_output_len(16), 32);
+        assert_eq!(AesCbcPkcs7PaddedStub::padded_output_len(30), 32);
+        assert_eq!(AesCbcPkcs7PaddedStub::padded_output_len(32), 48);
     }
 
-    /// Tests for AES-256-CBC decryption
-    pub fn aes_256_cbc_test_decrypt<A: AesCbcPkcs7Padded>(_marker: PhantomData<A>) {
-        // http://google3/third_party/wycheproof/testvectors/aes_cbc_pkcs5_test.json;l=1492;rcl=264817632
-        let key: Aes256Key =
-            hex!("665a02bc265a66d01775091da56726b6668bfd903cb7af66fb1b78a8a062e43c").into();
-        let iv: AesCbcIv = hex!("3fb0d5ecd06c71150748b599595833cb");
-        let ciphertext = hex!("3f3f39697bd7e88d85a14132be1cbc48");
-        let expected_msg = hex!("3f56935def3f");
-        assert_eq!(A::decrypt(&key, &iv, &ciphertext).unwrap(), expected_msg);
+    #[test]
+    #[should_panic]
+    fn test_padded_output_len_overflow() {
+        let _ = AesCbcPkcs7PaddedStub::padded_output_len(usize::MAX);
     }
 
-    /// Generates the test cases to validate the AES-256-CBC implementation.
-    /// For example, to test `MyAesCbc256Impl`:
-    ///
-    /// ```
-    /// use crypto_provider::aes::cbc::testing::*;
-    ///
-    /// mod tests {
-    ///     #[apply(aes_256_cbc_test_cases)]
-    ///     fn aes_256_cbc_tests(
-    ///             testcase: CryptoProviderTestCases<PhantomData<MyAesCbc256Impl>>) {
-    ///         testcase(PhantomData);
-    ///     }
-    /// }
-    /// ```
-    #[template]
-    #[export]
-    #[rstest]
-    #[case::encrypt(aes_256_cbc_test_encrypt)]
-    #[case::decrypt(aes_256_cbc_test_decrypt)]
-    fn aes_256_cbc_test_cases<A: AesCbcPkcs7Padded>(#[case] testcase: CryptoProviderTestCases<F>) {}
+    struct AesCbcPkcs7PaddedStub;
+
+    impl AesCbcPkcs7Padded for AesCbcPkcs7PaddedStub {
+        #[cfg(feature = "alloc")]
+        fn encrypt(_key: &Aes256Key, _iv: &AesCbcIv, _message: &[u8]) -> Vec<u8> {
+            unimplemented!()
+        }
+
+        fn encrypt_in_place(
+            _key: &Aes256Key,
+            _iv: &AesCbcIv,
+            _message: &mut SliceVec<u8>,
+        ) -> Result<(), EncryptionError> {
+            unimplemented!()
+        }
+
+        #[cfg(feature = "alloc")]
+        fn decrypt(
+            _key: &Aes256Key,
+            _iv: &AesCbcIv,
+            _ciphertext: &[u8],
+        ) -> Result<Vec<u8>, DecryptionError> {
+            unimplemented!()
+        }
+
+        fn decrypt_in_place(
+            _key: &Aes256Key,
+            _iv: &AesCbcIv,
+            _ciphertext: &mut SliceVec<u8>,
+        ) -> Result<(), DecryptionError> {
+            unimplemented!()
+        }
+    }
 }

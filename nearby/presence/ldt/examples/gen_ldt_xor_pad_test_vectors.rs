@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Generates LDT test vectors which can be used to verify implementations
+
+#![allow(clippy::unwrap_used)]
+
 use crypto_provider::aes::BLOCK_SIZE;
 use crypto_provider::{aes, CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
-use ldt::{LdtEncryptCipher, LdtKey, Swap, XorPadder};
+use ldt::{LdtCipher, LdtEncryptCipher, LdtKey, Swap, XorPadder};
 use rand::{Rng as _, SeedableRng as _};
 use rand_ext::*;
 use serde_json::json;
@@ -35,9 +39,7 @@ fn main() {
         let ldt_enc = LdtEncryptCipher::<BLOCK_SIZE, XtsAes128<RustCrypto>, Swap>::new(&key);
 
         let mut ciphertext = plaintext.clone();
-        ldt_enc
-            .encrypt(&mut ciphertext, &XorPadder::from(pad_xor))
-            .unwrap();
+        ldt_enc.encrypt(&mut ciphertext, &XorPadder::from(pad_xor)).unwrap();
 
         array.push(json!({
             "plaintext": hex::encode_upper(&plaintext),

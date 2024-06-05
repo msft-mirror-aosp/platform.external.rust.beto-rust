@@ -6,89 +6,93 @@ package {
     //   legacy_unencumbered
     //   SPDX-license-identifier-Apache-2.0
     //   SPDX-license-identifier-Unlicense
+    default_visibility: [":__subpackages__"],
     default_applicable_licenses: ["external_rust_beto-rust_license"],
 }
 
 rust_library_rlib {
     name: "libcrypto_provider",
-    host_supported: true,
     crate_name: "crypto_provider",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
+    defaults: ["beto_rust_defaults"],
     srcs: ["crypto/crypto_provider/src/lib.rs"],
-    edition: "2021",
     features: [
         "std",
         "alloc",
         "default",
+        "gcm_siv",
     ],
     rustlibs: [
         "libhex",
         "librand",
-    ],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
+        "libtinyvec",
     ],
 }
 
 rust_library_rlib {
-    name: "libcrypto_provider_openssl",
-    host_supported: true,
-    crate_name: "crypto_provider_openssl",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
-    cfgs: ["soong"],
-    srcs: ["crypto/crypto_provider_openssl/src/lib.rs"],
-    edition: "2021",
+    name: "libcrypto_provider_stubs",
+    crate_name: "crypto_provider_stubs",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["crypto/crypto_provider_stubs/src/lib.rs"],
+    rustlibs: [
+        "libcrypto_provider",
+    ],
+}
+
+rust_library_rlib {
+    name: "libcrypto_provider_default",
+    crate_name: "crypto_provider_default",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["crypto/crypto_provider_default/src/lib.rs"],
     features: ["boringssl"],
     rustlibs: [
         "libcfg_if",
         "libcrypto_provider",
-        "libopenssl",
-        "librand",
+        "libcrypto_provider_boringssl",
     ],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
+}
+
+rust_library_rlib {
+    name: "libcrypto_provider_boringssl",
+    crate_name: "crypto_provider_boringssl",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["crypto/crypto_provider_boringssl/src/lib.rs"],
+    rustlibs: [
+        "libcfg_if",
+        "libcrypto_provider",
+        "libcrypto_provider_stubs",
+        "libbssl_crypto",
+        "librand",
     ],
 }
 
 rust_ffi_shared {
     name: "libukey2_c_ffi_shared",
     stem: "libukey2_c_ffi",
-    host_supported: true,
     crate_name: "ukey2_c_ffi",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
+    defaults: ["beto_rust_defaults"],
     srcs: ["connections/ukey2/ukey2_c_ffi/src/lib.rs"],
-    edition: "2021",
-    features: ["openssl"],
+    features: [
+        "openssl",
+        "std",
+    ],
     rlibs: [
         "libcfg_if",
-        "libcrypto_provider_openssl",
+        "libcrypto_provider_default",
         "liblazy_static",
+        "liblock_adapter",
         "liblog_rust",
         "librand",
         "librand_chacha",
-        "libspin_nostd",
         "libukey2_connections",
         "libukey2_rs",
-    ],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
     ],
 }
 
 rust_library_rlib {
     name: "libukey2_connections",
-    host_supported: true,
     crate_name: "ukey2_connections",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
+    defaults: ["beto_rust_defaults"],
     srcs: ["connections/ukey2/ukey2_connections/src/lib.rs"],
-    edition: "2021",
     rustlibs: [
         "libbytes",
         "libcrypto_provider",
@@ -97,22 +101,18 @@ rust_library_rlib {
         "libukey2_proto",
         "libukey2_rs",
     ],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
-    ],
 }
 
 rust_ffi_shared {
     name: "libukey2_jni_shared",
     stem: "libukey2_jni",
-    host_supported: true,
     crate_name: "ukey2_jni",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
+    defaults: ["beto_rust_defaults"],
     srcs: ["connections/ukey2/ukey2_jni/src/lib.rs"],
-    edition: "2021",
-    features: ["openssl"],
+    features: [
+        "openssl",
+        "std",
+    ],
     // Using rlibs instead of rustlibs here to minimize the size impact on the system image. Since
     // most of the transitive dependencies are included only by this project for U, building this
     // as a single dylib will be more space-efficient. As more Rust project gets added, this may
@@ -120,61 +120,43 @@ rust_ffi_shared {
     // common projects like libjni and libprotobuf.
     rlibs: [
         "libcfg_if",
-        "libcrypto_provider_openssl",
-        "libjni",
+        "libcrypto_provider_default",
+        "libjni_legacy",
         "liblazy_static",
+        "liblock_adapter",
         "librand",
         "librand_chacha",
-        "libspin_nostd",
         "libukey2_connections",
         "libukey2_rs",
     ],
     compile_multilib: "first",
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
-    ],
+    visibility: ["//visibility:public"],
 }
 
 rust_library_rlib {
     name: "libukey2_proto",
-    host_supported: true,
     crate_name: "ukey2_proto",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
+    defaults: ["beto_rust_defaults"],
     srcs: ["connections/ukey2/ukey2_proto/src/lib.rs"],
-    edition: "2021",
     features: [
         "default",
     ],
     rustlibs: [
         "libprotobuf",
     ],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
-    ],
 }
 
 rust_library_rlib {
     name: "libukey2_rs",
-    host_supported: true,
     crate_name: "ukey2_rs",
-    cargo_env_compat: true,
-    cargo_pkg_version: "0.1.0",
+    defaults: ["beto_rust_defaults"],
     srcs: ["connections/ukey2/ukey2/src/lib.rs"],
-    edition: "2021",
     rustlibs: [
         "libcrypto_provider",
         "libnum_bigint",
         "liblog_rust",
         "librand",
         "libukey2_proto",
-    ],
-    proc_macros: ["libderive_getters"],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
     ],
 }
 
@@ -188,7 +170,129 @@ java_library_static {
     static_libs: [
         "jsr305",
     ],
+    visibility: ["//visibility:public"],
     required: [
         "libukey2_jni_shared",
+    ],
+}
+
+rust_library_rlib {
+    name: "libnp_adv",
+    crate_name: "np_adv",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/np_adv/src/lib.rs"],
+    rustlibs: [
+        "libarray_view",
+        "libldt_np_adv",
+        "libldt",
+        "libnp_hkdf",
+        "libnp_ed25519",
+        "libxts_aes",
+        "libcrypto_provider",
+        "libstrum",
+        "libnom",
+        "liblazy_static",
+        "libsink",
+        "libtinyvec",
+    ],
+    proc_macros: [
+        "libstrum_macros",
+    ],
+}
+
+rust_library_rlib {
+    name: "libarray_view",
+    crate_name: "array_view",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/array_view/src/lib.rs"],
+}
+
+rust_library_rlib {
+    name: "libldt",
+    crate_name: "ldt",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/ldt/src/lib.rs"],
+    rustlibs: [
+        "libcrypto_provider",
+        "libldt_tbc",
+    ],
+}
+
+rust_library_rlib {
+    name: "libldt_tbc",
+    crate_name: "ldt_tbc",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/ldt_tbc/src/lib.rs"],
+    rustlibs: [
+        "libcrypto_provider",
+    ],
+}
+
+rust_library_rlib {
+    name: "libldt_np_adv",
+    crate_name: "ldt_np_adv",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/ldt_np_adv/src/lib.rs"],
+    rustlibs: [
+        "libcrypto_provider",
+        "libarray_view",
+        "libldt",
+        "libnp_hkdf",
+        "libxts_aes",
+        "libldt_tbc",
+    ],
+}
+
+rust_library_rlib {
+    name: "libnp_hkdf",
+    crate_name: "np_hkdf",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/np_hkdf/src/lib.rs"],
+    rustlibs: [
+        "libcrypto_provider",
+        "libldt",
+        "libxts_aes",
+    ],
+}
+
+rust_library_rlib {
+    name: "libnp_ed25519",
+    crate_name: "np_ed25519",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/np_ed25519/src/lib.rs"],
+    rustlibs: [
+        "libarray_view",
+        "libcrypto_provider",
+        "libsink",
+        "libtinyvec",
+    ],
+}
+
+rust_library_rlib {
+    name: "libxts_aes",
+    crate_name: "xts_aes",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/xts_aes/src/lib.rs"],
+    rustlibs: [
+        "libarray_ref",
+        "libcrypto_provider",
+        "libldt_tbc",
+    ],
+}
+
+rust_library_rlib {
+    name: "libarray_ref",
+    crate_name: "array_ref",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/array_ref/src/lib.rs"],
+}
+
+rust_library_rlib {
+    name: "libsink",
+    crate_name: "sink",
+    defaults: ["beto_rust_defaults"],
+    srcs: ["presence/sink/src/lib.rs"],
+    rustlibs: [
+        "libtinyvec",
     ],
 }

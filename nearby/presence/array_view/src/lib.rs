@@ -14,14 +14,9 @@
 
 //! A no_std friendly array wrapper to expose a variable length prefix of the array.
 #![no_std]
-#![forbid(unsafe_code)]
-#![deny(
-    missing_docs,
-    clippy::indexing_slicing,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::expect_used
-)]
+
+#[cfg(feature = "std")]
+extern crate std;
 
 use core::{borrow, fmt};
 
@@ -42,6 +37,20 @@ impl<T: fmt::Debug, const N: usize> fmt::Debug for ArrayView<T, N> {
 }
 
 impl<T, const N: usize> ArrayView<T, N> {
+    /// Destructures this ArrayView into a (length, payload) pair.
+    pub fn into_raw_parts(self) -> (usize, [T; N]) {
+        (self.len, self.array)
+    }
+    /// A version of [`ArrayView#try_from_array`] which panics if `len > buffer.len()`,
+    /// suitable for usage in `const` contexts.
+    pub const fn const_from_array(array: [T; N], len: usize) -> ArrayView<T, N> {
+        if N < len {
+            panic!("Invalid const ArrayView");
+        } else {
+            ArrayView { array, len }
+        }
+    }
+
     /// Create an [ArrayView] of the first `len` elements of `buffer`.
     ///
     /// Returns `None` if `len > buffer.len()`.
@@ -53,7 +62,7 @@ impl<T, const N: usize> ArrayView<T, N> {
         }
     }
 
-    /// Returns the prefix of the array as a slice.
+    /// Returns the occupied portion of the array as a slice.
     pub fn as_slice(&self) -> &[T] {
         &self.array[..self.len]
     }
@@ -78,10 +87,7 @@ impl<T: Default + Copy, const N: usize> ArrayView<T, N> {
         } else {
             let mut array = [T::default(); N];
             array[..slice.len()].copy_from_slice(slice);
-            Some(ArrayView {
-                array,
-                len: slice.len(),
-            })
+            Some(ArrayView { array, len: slice.len() })
         }
     }
 }
@@ -99,9 +105,8 @@ impl<T, const N: usize> borrow::Borrow<[T]> for ArrayView<T, N> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
     extern crate std;
     use crate::ArrayView;
     use std::format;
@@ -110,10 +115,7 @@ mod tests {
     fn debug_only_shows_len_elements() {
         assert_eq!(
             "[1, 2]",
-            &format!(
-                "{:?}",
-                ArrayView::try_from_array([1, 2, 3, 4, 5], 2).unwrap()
-            )
+            &format!("{:?}", ArrayView::try_from_array([1, 2, 3, 4, 5], 2).unwrap())
         );
     }
 

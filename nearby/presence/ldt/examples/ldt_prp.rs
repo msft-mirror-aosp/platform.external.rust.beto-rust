@@ -20,7 +20,10 @@
 //!
 //! The output shows how many times a change to the first n bytes wasn't detected, as well as a
 //! histogram of how many bits were flipped in the entire plaintext.
-use clap::{self, Parser as _};
+
+#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
+use clap::Parser as _;
 use crypto_provider::aes::BLOCK_SIZE;
 use crypto_provider::{CryptoProvider, CryptoRng};
 use crypto_provider_rustcrypto::RustCrypto;
@@ -53,7 +56,7 @@ fn run_trials(args: Args) {
                         &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
                     ),
                     &mut rng,
-                    DefaultPadder::default(),
+                    DefaultPadder,
                     &args,
                 )
             } else {
@@ -65,7 +68,7 @@ fn run_trials(args: Args) {
                         &LdtKey::from_random::<RustCrypto>(&mut cp_rng),
                     ),
                     &mut rng,
-                    DefaultPadder::default(),
+                    DefaultPadder,
                     &args,
                 )
             };

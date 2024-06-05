@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(missing_docs, clippy::indexing_slicing)]
+
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BatchSize, BenchmarkGroup, Criterion,
 };
 use crypto_provider::CryptoProvider;
-use crypto_provider_openssl::Openssl;
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use rand::{distributions::Standard, rngs::ThreadRng, Rng};
 
 fn constant_time_eq_equals(c: &mut Criterion) {
@@ -33,7 +34,7 @@ fn constant_time_eq_equals(c: &mut Criterion) {
     fn add_benches<C: CryptoProvider>(group: &mut BenchmarkGroup<WallTime>, rng: &mut ThreadRng) {
         const TEST_LEN: usize = 1000;
         for i in (0..=TEST_LEN).step_by(100) {
-            group.bench_function(
+            let _ = group.bench_function(
                 &format!(
                     "constant_time_eq impl {} differ by {:04} bytes",
                     std::any::type_name::<C>(),
@@ -55,8 +56,7 @@ fn constant_time_eq_equals(c: &mut Criterion) {
         }
     }
 
-    add_benches::<RustCrypto>(&mut group, &mut rng);
-    add_benches::<Openssl>(&mut group, &mut rng);
+    add_benches::<CryptoProviderImpl>(&mut group, &mut rng);
 }
 
 criterion_group!(benches, constant_time_eq_equals);

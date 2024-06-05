@@ -14,47 +14,222 @@
 
 use core::fmt::Debug;
 
-/// Collection of types used to provide an implementation of ed25519, the Edwards-curve Digital
-/// Signature Algorithm scheme using sha-512 (sha2) and Curve25519
-pub trait Ed25519Provider {
-    /// The keypair which includes both public and secret halves of an asymmetric key.
-    type KeyPair: KeyPair<PublicKey = Self::PublicKey, Signature = Self::Signature>;
-    /// The ed25519 public key, used when verifying a message
-    type PublicKey: PublicKey<Signature = Self::Signature>;
-    /// The ed25519 signature which is the result of signing a message
-    type Signature: Signature;
-}
+// User-facing, crypto-provider independent structs
 
 /// The length of a ed25519 `Signature`, in bytes.
 pub const SIGNATURE_LENGTH: usize = 64;
 
-/// The length of an ed25519 `KeyPair`, in bytes.
-pub const KEY_PAIR_LENGTH: usize = 64;
+/// The length of an ed25519 `PrivateKey`, in bytes.
+pub const PRIVATE_KEY_LENGTH: usize = 32;
 
-/// The length of an ed25519 `PublicKey`, in bytes.
-pub const KEY_LENGTH: usize = 32;
+/// The length of an ed25519 `PrivateKey`, in bytes.
+pub const PUBLIC_KEY_LENGTH: usize = 32;
+
+/// A byte buffer the size of a ed25519 `Signature`.
+pub type RawSignature = [u8; SIGNATURE_LENGTH];
+
+/// A byte buffer the size of a ed25519 `PublicKey`.
+pub type RawPublicKey = [u8; PUBLIC_KEY_LENGTH];
+
+/// A byte buffer the size of a ed25519 `PrivateKey`.
+pub type RawPrivateKey = [u8; PRIVATE_KEY_LENGTH];
+
+/// A permission token which may be supplied to methods which allow
+/// converting private keys to/from raw bytes.
+///
+/// In general, operations of this kind should only be done in
+/// development-tools, tests, or in credential storage layers
+/// to prevent accidental exposure of the private key.
+pub struct RawPrivateKeyPermit {
+    _marker: (),
+}
+
+impl RawPrivateKeyPermit {
+    pub(crate) fn new() -> Self {
+        Self { _marker: () }
+    }
+}
+
+#[cfg(feature = "raw_private_key_permit")]
+impl core::default::Default for RawPrivateKeyPermit {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A crypto-provider-independent representation of the private
+/// key of an ed25519 key-pair, kept in such a way that
+/// it does not permit de-structuring it into raw bytes,
+/// nor constructing one from raw bytes.
+///
+/// Useful for when you want a data-structure to be
+/// crypto-provider independent and contain a private key.
+#[derive(Clone)]
+pub struct PrivateKey(RawPrivateKey);
+
+impl PrivateKey {
+    /// Derives the public key corresponding to this private key.
+    pub fn derive_public_key<E: Ed25519Provider>(&self) -> PublicKey {
+        let key_pair = E::KeyPair::from_private_key(self);
+        key_pair.public_key().to_external()
+    }
+    /// Sign the given message and return a digital signature
+    pub fn sign<E: Ed25519Provider>(&self, msg: &[u8]) -> Signature {
+        let key_pair = E::KeyPair::from_private_key(self);
+        key_pair.sign(msg).to_external()
+    }
+    /// Generate an ed25519 private key from a CSPRNG
+    /// generate is not available in `no-std`.
+    #[cfg(feature = "std")]
+    pub fn generate<E: Ed25519Provider>() -> Self {
+        let key_pair = E::KeyPair::generate();
+        key_pair.private_key()
+    }
+
+    /// Returns the raw bytes of this private key.
+    /// This operation is only possible while holding a [`RawPrivateKeyPermit`].
+    pub fn raw_private_key(&self, _permit: &RawPrivateKeyPermit) -> RawPrivateKey {
+        self.0
+    }
+    /// Constructs a private key from the raw bytes of the key.
+    /// This operation is only possible while holding a [`RawPrivateKeyPermit`].
+    pub fn from_raw_private_key(wrapped: RawPrivateKey, _permit: &RawPrivateKeyPermit) -> Self {
+        PrivateKey(wrapped)
+    }
+}
+
+/// error returned when bad bytes are provided to generate keypair
+#[derive(Debug)]
+pub struct InvalidPublicKeyBytes;
+
+/// Error returned if the verification on the signature + message fails
+#[derive(Debug)]
+pub struct SignatureError;
+
+/// A crypto-provider-independent representation of a valid
+/// public key for an ed25519 key-pair in the Edwards Y-format.
+///
+/// Useful for when you want a data-structure to be crypto-provider
+/// independent and contain a public key.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublicKey(RawPublicKey);
+
+impl PublicKey {
+    /// Attempts to parse a public key from an array of bytes.
+    /// If the input is not in the Edwards Y-format, this method
+    /// will yield an `InvalidPublicKeyBytes` error.
+    pub fn from_bytes<E: Ed25519Provider>(
+        wrapped: RawPublicKey,
+    ) -> Result<Self, InvalidPublicKeyBytes> {
+        // Simply verify that we can construct the crypto-provider-dependent variant.
+        let _ = <E::PublicKey as PublicKeyImpl>::from_bytes(&wrapped)?;
+        Ok(PublicKey(wrapped))
+    }
+    /// Converts this public-key into the raw bytes of this public-key.
+    pub fn into_bytes(self) -> RawPublicKey {
+        self.0
+    }
+
+    /// Converts this crypto-provider-independent public key to a crypto-provider's internal rep.
+    #[allow(clippy::expect_used)]
+    fn as_internal<E: Ed25519Provider>(&self) -> E::PublicKey {
+        <E::PublicKey as PublicKeyImpl>::from_bytes(&self.0)
+            .expect("Public key bytes validated upon construction.")
+    }
+
+    /// Succeeds if the signature on the given message is verified
+    /// by this public key.
+    pub fn verify_strict<E: Ed25519Provider>(
+        &self,
+        message: &[u8],
+        signature: Signature,
+    ) -> Result<(), SignatureError> {
+        let public_key = self.as_internal::<E>();
+        let signature = signature.as_internal::<E>();
+        public_key.verify_strict(message, &signature)
+    }
+}
+
+/// A crypto-provider-independent representation of an Ed25519 signature.
+/// The underlying representation here can be any arbitrary bytes - verifying
+/// code handles determining whether/not the signature actually corresponds
+/// to a real Ed25519 signature and matches the given public key.
+#[derive(Clone)]
+pub struct Signature(RawSignature);
+
+impl From<RawSignature> for Signature {
+    fn from(wrapped: RawSignature) -> Self {
+        Signature(wrapped)
+    }
+}
+
+impl Signature {
+    /// Constructs a signature from raw bytes.
+    pub fn new(wrapped: RawSignature) -> Self {
+        Signature(wrapped)
+    }
+    /// Transforms this signature back into raw bytes.
+    pub fn to_bytes(self) -> RawSignature {
+        self.0
+    }
+    /// Converts this crypto-provider-independent signature to a crypto-provider's internal rep.
+    fn as_internal<E: Ed25519Provider>(&self) -> E::Signature {
+        <E::Signature as SignatureImpl>::from_bytes(&self.0)
+    }
+}
+
+// Implementor-facing crypto-provider-internal traits.
+
+/// Collection of types used to provide an implementation of ed25519, the Edwards-curve Digital
+/// Signature Algorithm scheme using sha-512 (sha2) and Curve25519
+pub trait Ed25519Provider {
+    /// The internal representation of a keypair which includes both public and secret halves of an asymmetric key.
+    type KeyPair: KeyPairImpl<PublicKey = Self::PublicKey, Signature = Self::Signature>;
+    /// The internal representation of an ed25519 public key, used when verifying a message
+    type PublicKey: PublicKeyImpl<Signature = Self::Signature>;
+    /// The internal representation of an ed25519 signature which is the result of signing a message
+    type Signature: SignatureImpl;
+}
 
 /// The keypair which includes both public and secret halves of an asymmetric key.
-pub trait KeyPair: Sized {
+pub trait KeyPairImpl: Sized {
     /// The ed25519 public key, used when verifying a message
-    type PublicKey: PublicKey;
+    type PublicKey: PublicKeyImpl;
 
     /// The ed25519 signature returned when signing a message
-    type Signature: Signature;
+    type Signature: SignatureImpl;
 
-    /// Converts the key-pair to an array of bytes consisting
-    /// of the bytes of the private key followed by the bytes
-    /// of the public key. This method should only ever be called
-    /// by code which securely stores private credentials.
-    fn to_bytes(&self) -> [u8; KEY_PAIR_LENGTH];
+    /// Returns the private key bytes of the `KeyPair`.
+    /// This operation is only possible while holding a [`RawPrivateKeyPermit`].
+    fn raw_private_key(&self, _permit: &RawPrivateKeyPermit) -> RawPrivateKey;
 
-    /// Builds this key-pair from an array of bytes in the
-    /// format yielded by `to_bytes`. This method should
-    /// only ever be called by code which securely stores private
-    /// credentials.
-    fn from_bytes(bytes: [u8; KEY_PAIR_LENGTH]) -> Result<Self, InvalidBytes>
+    /// Builds a key-pair from a `RawPrivateKey` array of bytes.
+    /// This operation is only possible while holding a [`RawPrivateKeyPermit`].
+    fn from_raw_private_key(bytes: &RawPrivateKey, _permit: &RawPrivateKeyPermit) -> Self
     where
         Self: Sized;
+
+    /// Returns the private key of the `KeyPair` in an opaque form.
+    fn private_key(&self) -> PrivateKey {
+        // We're okay to reach in and grab the bytes of the private key,
+        // since the way that we're exposing it would require a valid
+        // [`RawPrivateKeyPermit`] to extract them again.
+        let wrapped = self.raw_private_key(&RawPrivateKeyPermit::new());
+        PrivateKey(wrapped)
+    }
+
+    /// Builds a key-pair from a [`PrivateKey`], given in an opaque form.
+    fn from_private_key(private_key: &PrivateKey) -> Self
+    where
+        Self: Sized,
+    {
+        // We're okay to reach in and construct an instance from
+        // the bytes of the private key, since the way that they
+        // were originally expressed would still require a valid
+        // [`RawPrivateKeyPermit`] to access them.
+        let raw_private_key = &private_key.0;
+        Self::from_raw_private_key(raw_private_key, &RawPrivateKeyPermit::new())
+    }
 
     /// Sign the given message and return a digital signature
     fn sign(&self, msg: &[u8]) -> Self::Signature;
@@ -65,33 +240,48 @@ pub trait KeyPair: Sized {
     fn generate() -> Self;
 
     /// getter function for the Public Key of the key pair
-    fn public(&self) -> Self::PublicKey;
+    fn public_key(&self) -> Self::PublicKey;
 }
 
 /// An ed25519 signature
-pub trait Signature: Sized {
-    /// Create a new signature from a byte slice, and return an error on an invalid signature
-    /// An `Ok` result does not guarantee that the Signature is valid, however it will catch a
-    /// number of invalid signatures relatively inexpensively.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, InvalidSignature>;
+pub trait SignatureImpl: Sized {
+    /// Create a new signature from a fixed size byte array. This represents a container for the
+    /// byte serialization of an Ed25519 signature, and does not necessarily represent well-formed
+    /// field or curve elements.
+    ///
+    /// Signature verification libraries are expected to reject invalid field
+    /// elements at the time a signature is verified (not constructed).
+    fn from_bytes(bytes: &RawSignature) -> Self;
 
     /// Returns a slice of the signature bytes
-    fn to_bytes(&self) -> [u8; SIGNATURE_LENGTH];
+    fn to_bytes(&self) -> RawSignature;
+
+    /// Returns a crypto-provider-independent `Signature` from this implementation-specific struct.
+    fn to_external(&self) -> Signature {
+        let wrapped = self.to_bytes();
+        Signature(wrapped)
+    }
 }
 
 /// An ed25519 public key
-pub trait PublicKey {
+pub trait PublicKeyImpl {
     /// the signature type being used by verify
-    type Signature: Signature;
+    type Signature: SignatureImpl;
 
     /// Builds this public key from an array of bytes in
     /// the format yielded by `to_bytes`.
-    fn from_bytes(bytes: [u8; KEY_LENGTH]) -> Result<Self, InvalidBytes>
+    fn from_bytes(bytes: &RawPublicKey) -> Result<Self, InvalidPublicKeyBytes>
     where
         Self: Sized;
 
     /// Yields the bytes of the public key
-    fn to_bytes(&self) -> [u8; KEY_LENGTH];
+    fn to_bytes(&self) -> RawPublicKey;
+
+    /// Returns a crypto-provider-independent `PublicKey` from this implementation-specific struct.
+    fn to_external(&self) -> PublicKey {
+        let wrapped = self.to_bytes();
+        PublicKey(wrapped)
+    }
 
     /// Succeeds if the signature was a valid signature created by this Keypair on the prehashed_message.
     fn verify_strict(
@@ -99,159 +289,4 @@ pub trait PublicKey {
         message: &[u8],
         signature: &Self::Signature,
     ) -> Result<(), SignatureError>;
-}
-
-/// error returned when bad bytes are provided to generate keypair
-#[derive(Debug)]
-pub struct InvalidBytes;
-
-/// Error returned if the verification on the signature + message fails
-#[derive(Debug)]
-pub struct SignatureError;
-
-/// Error returned if invalid signature bytes are provided
-#[derive(Debug)]
-pub struct InvalidSignature;
-
-#[cfg(feature = "testing")]
-/// Utilities for testing. Implementations can use the test cases and functions provided to test
-/// their implementation.
-pub mod testing {
-    extern crate alloc;
-    extern crate std;
-
-    use crate::ed25519::{Ed25519Provider, KeyPair, PublicKey, Signature};
-    use alloc::borrow::ToOwned;
-    use alloc::string::String;
-    use alloc::vec::Vec;
-    use wycheproof::TestResult;
-
-    // These are test vectors from the creators of Ed25519: https://ed25519.cr.yp.to/ which are referenced
-    // as the SOT for the test vectors in the RFC: https://www.rfc-editor.org/rfc/rfc8032#section-7.1
-    // The vectors have been formatted into a easily parsable/readable format by libgcrypt which is
-    // also used for test cases in the above RFC:
-    // https://dev.gnupg.org/source/libgcrypt/browse/master/tests/t-ed25519.inp
-    const PATH_TO_RFC_VECTORS_FILE: &str =
-        "crypto/crypto_provider/src/testdata/ecdsa/rfc_test_vectors.txt";
-
-    /// Runs set of Ed25519 wycheproof test vectors against a provided ed25519 implementation
-    /// Tests vectors from Project Wycheproof: <https://github.com/google/wycheproof>
-    pub fn run_wycheproof_test_vectors<E>()
-    where
-        E: Ed25519Provider,
-    {
-        let test_set = wycheproof::eddsa::TestSet::load(wycheproof::eddsa::TestName::Ed25519)
-            .expect("should be able to load test set");
-
-        for test_group in test_set.test_groups {
-            let key_pair = test_group.key;
-            let public_key = key_pair.pk;
-            let secret_key = key_pair.sk;
-
-            for test in test_group.tests {
-                let tc_id = test.tc_id;
-                let comment = test.comment;
-                let sig = test.sig;
-                let msg = test.msg;
-
-                let valid = match test.result {
-                    TestResult::Invalid => false,
-                    TestResult::Valid | TestResult::Acceptable => true,
-                };
-                let result = run_test::<E>(
-                    public_key.clone(),
-                    secret_key.clone(),
-                    sig.clone(),
-                    msg.clone(),
-                );
-                if valid {
-                    if let Err(desc) = result {
-                        panic!(
-                            "\n\
-                         Failed test {}: {}\n\
-                         msg:\t{:?}\n\
-                         sig:\t{:?}\n\
-                         comment:\t{:?}\n",
-                            tc_id, desc, msg, sig, comment,
-                        );
-                    }
-                } else {
-                    assert!(result.is_err())
-                }
-            }
-        }
-    }
-
-    /// Runs the RFC specified test vectors against an Ed25519 implementation
-    pub fn run_rfc_test_vectors<E>()
-    where
-        E: Ed25519Provider,
-    {
-        let file_contents =
-            std::fs::read_to_string(test_helper::get_data_file(PATH_TO_RFC_VECTORS_FILE))
-                .expect("should be able to read file");
-
-        let mut split_cases: Vec<&str> = file_contents.as_str().split("\n\n").collect();
-        // remove the comments
-        split_cases.remove(0);
-        for case in split_cases {
-            let test_case: Vec<&str> = case.split('\n').collect();
-
-            let tc_id = extract_string(test_case[0]);
-            let sk = extract_hex(test_case[1]);
-            let pk = extract_hex(test_case[2]);
-            let msg = extract_hex(test_case[3]);
-            let sig = extract_hex(test_case[4]);
-
-            let result = run_test::<E>(pk.clone(), sk.clone(), sig.clone(), msg.clone());
-            if let Err(desc) = result {
-                panic!(
-                    "\n\
-                         Failed test {}: {}\n\
-                         msg:\t{:?}\n\
-                         sig:\t{:?}\n\"",
-                    tc_id, desc, msg, sig,
-                );
-            }
-        }
-    }
-
-    fn extract_hex(line: &str) -> Vec<u8> {
-        test_helper::string_to_hex(extract_string(line).as_str())
-    }
-
-    fn extract_string(line: &str) -> String {
-        line.split(':').collect::<Vec<&str>>()[1].trim().to_owned()
-    }
-
-    fn run_test<E>(
-        pub_key: Vec<u8>,
-        secret_key: Vec<u8>,
-        sig: Vec<u8>,
-        msg: Vec<u8>,
-    ) -> Result<(), &'static str>
-    where
-        E: Ed25519Provider,
-    {
-        let kp_bytes: [u8; 64] = [secret_key.as_slice(), pub_key.as_slice()]
-            .concat()
-            .try_into()
-            .map_err(|_| "invalid length keypair")?;
-        let kp = E::KeyPair::from_bytes(kp_bytes)
-            .map_err(|_| "Should be able to create Keypair from bytes")?;
-
-        let sig_result = kp.sign(msg.as_slice());
-        (sig.as_slice() == sig_result.to_bytes())
-            .then_some(())
-            .ok_or("sig not matching expected")?;
-        let signature = E::Signature::from_bytes(sig.as_slice())
-            .map_err(|_| "unable to parse sign from test case")?;
-
-        let pub_key = kp.public();
-        pub_key
-            .verify_strict(msg.as_slice(), &signature)
-            .map_err(|_| "verify failed")?;
-
-        Ok(())
-    }
 }

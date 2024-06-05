@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::Debug;
+
+use log::error;
+
+use crypto_provider::CryptoProvider;
+use ukey2_proto::protobuf::Message;
+use ukey2_proto::ukey2_all_proto::ukey;
+
 use crate::proto_adapter::{IntoAdapter, MessageType, ToWrappedMessage as _};
 use crate::ukey2_handshake::ClientFinishedError;
 use crate::ukey2_handshake::{
     ClientInit, ClientInitError, Ukey2Client, Ukey2ClientStage1, Ukey2Server, Ukey2ServerStage1,
     Ukey2ServerStage2,
 };
-use crypto_provider::CryptoProvider;
-use log::error;
-use std::fmt::Debug;
-use ukey2_proto::protobuf::Message;
-use ukey2_proto::ukey2_all_proto::ukey;
 
 /// An alert type and message to be sent to the other party.
 #[derive(Debug, PartialEq, Eq)]
@@ -43,7 +46,8 @@ impl SendAlert {
             error_message: self.msg,
             ..Default::default()
         };
-        alert_message.to_wrapped_msg().write_to_bytes().unwrap()
+        #[allow(clippy::expect_used)]
+        alert_message.to_wrapped_msg().write_to_bytes().expect("Writing to proto should succeed")
     }
 }
 
@@ -107,13 +111,12 @@ impl<C: CryptoProvider> StateMachine for Ukey2ClientStage1<C> {
             )),
             MessageType::ServerInit => {
                 let message = decode_msg_contents::<_, ukey::Ukey2ServerInit>(message_data)?;
-                self.handle_server_init(message, message_bytes.to_vec())
-                    .map_err(|_| {
-                        SendAlert::from(
-                            ukey::ukey2alert::AlertType::BAD_MESSAGE_DATA,
-                            Some("bad message_data".to_string()),
-                        )
-                    })
+                self.handle_server_init(message, message_bytes.to_vec()).map_err(|_| {
+                    SendAlert::from(
+                        ukey::ukey2alert::AlertType::BAD_MESSAGE_DATA,
+                        Some("bad message_data".to_string()),
+                    )
+                })
             }
         }
     }
@@ -132,23 +135,20 @@ impl<C: CryptoProvider> StateMachine for Ukey2ServerStage1<C> {
             MessageType::ClientInit => {
                 let message: ClientInit =
                     decode_msg_contents::<_, ukey::Ukey2ClientInit>(message_data)?;
-                self.handle_client_init(rng, message, message_bytes.to_vec())
-                    .map_err(|e| {
-                        SendAlert::from(
-                            match e {
-                                ClientInitError::BadVersion => {
-                                    ukey::ukey2alert::AlertType::BAD_VERSION
-                                }
-                                ClientInitError::BadHandshakeCipher => {
-                                    ukey::ukey2alert::AlertType::BAD_HANDSHAKE_CIPHER
-                                }
-                                ClientInitError::BadNextProtocol => {
-                                    ukey::ukey2alert::AlertType::BAD_NEXT_PROTOCOL
-                                }
-                            },
-                            None,
-                        )
-                    })
+                self.handle_client_init(rng, message, message_bytes.to_vec()).map_err(|e| {
+                    SendAlert::from(
+                        match e {
+                            ClientInitError::BadVersion => ukey::ukey2alert::AlertType::BAD_VERSION,
+                            ClientInitError::BadHandshakeCipher => {
+                                ukey::ukey2alert::AlertType::BAD_HANDSHAKE_CIPHER
+                            }
+                            ClientInitError::BadNextProtocol => {
+                                ukey::ukey2alert::AlertType::BAD_NEXT_PROTOCOL
+                            }
+                        },
+                        None,
+                    )
+                })
             }
             MessageType::ClientFinish | MessageType::ServerInit => Err(SendAlert::from(
                 ukey::ukey2alert::AlertType::INCORRECT_MESSAGE,
@@ -170,25 +170,24 @@ impl<C: CryptoProvider> StateMachine for Ukey2ServerStage2<C> {
         match message_type {
             MessageType::ClientFinish => {
                 let message = decode_msg_contents::<_, ukey::Ukey2ClientFinished>(message_data)?;
-                self.handle_client_finished_msg(message, message_bytes)
-                    .map_err(|e| match e {
-                        ClientFinishedError::BadEd25519Key => SendAlert::from(
-                            ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY,
-                            "Bad ED25519 Key".to_string().into(),
-                        ),
-                        ClientFinishedError::BadP256Key => SendAlert::from(
-                            ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY,
-                            "Bad P256 Key".to_string().into(),
-                        ),
-                        ClientFinishedError::UnknownCommitment => SendAlert::from(
-                            ukey::ukey2alert::AlertType::BAD_MESSAGE_DATA,
-                            "Unknown commitment".to_string().into(),
-                        ),
-                        ClientFinishedError::BadKeyExchange => SendAlert::from(
-                            ukey::ukey2alert::AlertType::INTERNAL_ERROR,
-                            "Key exchange error".to_string().into(),
-                        ),
-                    })
+                self.handle_client_finished_msg(message, message_bytes).map_err(|e| match e {
+                    ClientFinishedError::BadEd25519Key => SendAlert::from(
+                        ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY,
+                        "Bad ED25519 Key".to_string().into(),
+                    ),
+                    ClientFinishedError::BadP256Key => SendAlert::from(
+                        ukey::ukey2alert::AlertType::BAD_PUBLIC_KEY,
+                        "Bad P256 Key".to_string().into(),
+                    ),
+                    ClientFinishedError::UnknownCommitment => SendAlert::from(
+                        ukey::ukey2alert::AlertType::BAD_MESSAGE_DATA,
+                        "Unknown commitment".to_string().into(),
+                    ),
+                    ClientFinishedError::BadKeyExchange => SendAlert::from(
+                        ukey::ukey2alert::AlertType::INTERNAL_ERROR,
+                        "Key exchange error".to_string().into(),
+                    ),
+                })
             }
             MessageType::ClientInit | MessageType::ServerInit => Err(SendAlert::from(
                 ukey::ukey2alert::AlertType::INCORRECT_MESSAGE,
@@ -211,17 +210,11 @@ fn decode_wrapper_msg_and_type(bytes: &[u8]) -> Result<(Vec<u8>, MessageType), S
         .and_then(|message| {
             let message_data = message.message_data();
             if message_data.is_empty() {
-                return Err(SendAlert::from(
-                    ukey::ukey2alert::AlertType::BAD_MESSAGE_DATA,
-                    None,
-                ));
+                return Err(SendAlert::from(ukey::ukey2alert::AlertType::BAD_MESSAGE_DATA, None));
             }
             let message_type = message.message_type();
             if message_type == ukey::ukey2message::Type::UNKNOWN_DO_NOT_USE {
-                return Err(SendAlert::from(
-                    ukey::ukey2alert::AlertType::BAD_MESSAGE_TYPE,
-                    None,
-                ));
+                return Err(SendAlert::from(ukey::ukey2alert::AlertType::BAD_MESSAGE_TYPE, None));
             }
             message_type
                 .into_adapter()

@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(missing_docs)]
+
 use criterion::{criterion_group, criterion_main, Criterion};
 
 use crypto_provider::hmac::Hmac;
 use crypto_provider::{CryptoProvider, CryptoRng};
-use crypto_provider_openssl::Openssl;
-use crypto_provider_rustcrypto::RustCrypto;
+use crypto_provider_default::CryptoProviderImpl;
 use rand_ext::random_bytes;
 
 // simple benchmark, which creates a new hmac, updates once, then finalizes
@@ -26,7 +27,7 @@ fn hmac_sha256_operations<C: CryptoProvider>(c: &mut Criterion) {
     let key: [u8; 32] = rand_ext::random_bytes::<32, C>(&mut rng);
     let update_data: [u8; 16] = rand_ext::random_bytes::<16, C>(&mut rng);
 
-    c.bench_function("bench for hmac sha256 single update", |b| {
+    let _ = c.bench_function("bench for hmac sha256 single update", |b| {
         b.iter(|| {
             let mut hmac = C::HmacSha256::new_from_key(key);
             hmac.update(&update_data);
@@ -40,7 +41,7 @@ fn hmac_sha512_operations<C: CryptoProvider>(c: &mut Criterion) {
     let key: [u8; 64] = rand_ext::random_bytes::<64, C>(&mut rng);
     let update_data: [u8; 16] = random_bytes::<16, C>(&mut rng);
 
-    c.bench_function("bench for hmac sha512 single update", |b| {
+    let _ = c.bench_function("bench for hmac sha512 single update", |b| {
         b.iter(|| {
             let mut hmac = C::HmacSha512::new_from_key(key);
             hmac.update(&update_data);
@@ -51,10 +52,8 @@ fn hmac_sha512_operations<C: CryptoProvider>(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    hmac_sha256_operations::<RustCrypto>,
-    hmac_sha256_operations::<Openssl>,
-    hmac_sha512_operations::<RustCrypto>,
-    hmac_sha512_operations::<Openssl>
+    hmac_sha256_operations::<CryptoProviderImpl>,
+    hmac_sha512_operations::<CryptoProviderImpl>,
 );
 
 criterion_main!(benches);

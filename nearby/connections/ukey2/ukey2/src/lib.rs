@@ -18,15 +18,6 @@
 //! establish a secure channel.
 //!
 //! For a full description of the protocol, see <https://github.com/google/ukey2>.
-#![forbid(unsafe_code)]
-#![deny(
-    missing_docs,
-    trivial_casts,
-    trivial_numeric_casts,
-    unused_extern_crates,
-    unused_import_braces,
-    unused_results
-)]
 
 mod proto_adapter;
 mod state_machine;
@@ -34,6 +25,7 @@ mod state_machine;
 mod tests;
 mod ukey2_handshake;
 
+pub use proto_adapter::NextProtocol;
 pub use state_machine::{SendAlert, StateMachine};
 pub use ukey2_handshake::{
     CompletedHandshake, HandshakeImplementation, Ukey2Client, Ukey2ClientStage1, Ukey2Server,
