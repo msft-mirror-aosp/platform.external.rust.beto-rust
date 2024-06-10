@@ -122,7 +122,7 @@ sec1 = "0.7.3"
 protobuf = "=3.2.0"
 protobuf-codegen = "=3.2.0"
 reqwest = { version = "0.11.22", default-features = false, features = ["blocking", "rustls-tls"] }
-jni = "0.20.0"
+jni = "0.21.1"
 lock_api = "0.4.11"
 spin = { version = "0.9.8", features = ["once", "lock_api", "rwlock"] }
 anyhow = "1.0.75"
