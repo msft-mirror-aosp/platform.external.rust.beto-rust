@@ -18,7 +18,7 @@
 //TODO: remove this and fix instances of unwrap/panic
 #![allow(clippy::unwrap_used, clippy::panic)]
 
-use jni::objects::{JClass, JObject, JThrowable};
+use jni::objects::{JByteArray, JClass, JIntArray, JThrowable};
 use jni::sys::{jboolean, jbyteArray, jint, jintArray, jlong, JNI_TRUE};
 use jni::JNIEnv;
 use lazy_static::lazy_static;
@@ -94,7 +94,7 @@ enum JniError {
 /// the caller may call `to_connection_context`to obtain a connection context.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DHandshakeContext_is_1handshake_1complete(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jboolean {
@@ -118,7 +118,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DHandshakeContext_create_1context(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     is_client: jboolean,
     next_protocols: jintArray,
@@ -126,11 +126,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
     let next_protocols = if next_protocols.is_null() {
         vec![NextProtocol::Aes256CbcHmacSha256]
     } else {
+        let next_protocols_raw = unsafe { JIntArray::from_raw(next_protocols) };
         let next_protocols_len =
-            env.get_array_length(next_protocols).expect("Array should be valid!");
+            env.get_array_length(&next_protocols_raw).expect("Array should be valid!");
         let mut next_protocol_buf =
             vec![0; usize::try_from(next_protocols_len).expect("len should be valid usize!")];
-        env.get_int_array_region(next_protocols, 0, &mut next_protocol_buf)
+        env.get_int_array_region(&next_protocols_raw, 0, &mut next_protocol_buf)
             .expect("Should've extracted next protocols!");
         next_protocol_buf
             .iter()
@@ -167,7 +168,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 /// Constructs the next message that should be sent in the handshake.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DHandshakeContext_get_1next_1handshake_1message(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -185,6 +186,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
     } else {
         empty_arr
     }
+    .into_raw()
 }
 
 /// Parses a handshake message and advances the internal state of the context.
@@ -192,12 +194,12 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DHandshakeContext_parse_1handshake_1message(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     message: jbyteArray,
 ) {
-    let rust_buffer = env.convert_byte_array(message).unwrap();
+    let rust_buffer = env.convert_byte_array(unsafe { JByteArray::from_raw(message) }).unwrap();
     let result = if let Some(ctx) = HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
         ctx.handle_handshake_message(rust_buffer.as_slice()).map_err(JniError::HandleMessageError)
     } else {
@@ -220,13 +222,13 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
                             "com/google/security/cryptauth/lib/securegcm/ukey2/AlertException",
                             "(Ljava/lang/String;[B)V",
                             &[
-                                env
+                                (&env
                                     .new_string("Failed to handle message, sending alert")
-                                    .expect("valid str message for alert exception")
+                                    .expect("valid str message for alert exception"))
                                     .into(),
-                                unsafe { JObject::from_raw(env
+                                (&env
                                     .byte_array_from_slice(&error_msg)
-                                    .expect("valid byte array for alert exception")) }
+                                    .expect("valid byte array for alert exception"))
                                     .into(),
                             ],
                         ).expect("Did not successfully create AlertException").into();
@@ -251,7 +253,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 /// be called if `is_handshake_complete` returns true.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DHandshakeContext_get_1verification_1string(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     length: jint,
@@ -284,13 +286,14 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
         let ret_vec = result.unwrap();
         env.byte_array_from_slice(&ret_vec).unwrap()
     }
+    .into_raw()
 }
 
 /// Creates a [`D2DConnectionContextV1`] using the results of the handshake. May only be called
 /// if `is_handshake_complete` returns true.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DHandshakeContext_to_1connection_1context(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jlong {
@@ -323,7 +326,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_encode_1message_1to_1peer(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     payload: jbyteArray,
@@ -332,19 +335,23 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
     // We create the empty array here so we don't run into issues requesting a new byte array from
     // the JNI env while an exception is being thrown.
     let empty_array = env.new_byte_array(0).unwrap();
-    let result =
-        if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
-            Ok(ctx.encode_message_to_peer::<CryptoProvider, _>(
-                env.convert_byte_array(payload).unwrap().as_slice(),
-                if associated_data.is_null() {
-                    None
-                } else {
-                    Some(env.convert_byte_array(associated_data).unwrap())
-                },
-            ))
-        } else {
-            Err(JniError::BadHandle)
-        };
+    let result = if let Some(ctx) =
+        CONNECTION_HANDLE_MAPPING.lock().get_mut(&(context_handle as u64))
+    {
+        Ok(ctx.encode_message_to_peer::<CryptoProvider, _>(
+            env.convert_byte_array(unsafe { JByteArray::from_raw(payload) }).unwrap().as_slice(),
+            if associated_data.is_null() {
+                None
+            } else {
+                Some(
+                    env.convert_byte_array(unsafe { JByteArray::from_raw(associated_data) })
+                        .unwrap(),
+                )
+            },
+        ))
+    } else {
+        Err(JniError::BadHandle)
+    };
     if let Ok(ret_vec) = result {
         env.byte_array_from_slice(ret_vec.as_slice()).expect("unable to create jByteArray")
     } else {
@@ -352,6 +359,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
             .expect("failed to find error class");
         empty_array
     }
+    .into_raw()
 }
 
 /// Once `InitiatorHello` and `ResponderHello` (and payload) are exchanged, use this method to
@@ -362,27 +370,31 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_decode_1message_1from_1peer(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
     message: jbyteArray,
     associated_data: jbyteArray,
 ) -> jbyteArray {
     let empty_array = env.new_byte_array(0).unwrap();
-    let result =
-        if let Some(ctx) = CONNECTION_HANDLE_MAPPING.lock().get_mut(&(context_handle as u64)) {
-            ctx.decode_message_from_peer::<CryptoProvider, _>(
-                env.convert_byte_array(message).unwrap().as_slice(),
-                if associated_data.is_null() {
-                    None
-                } else {
-                    Some(env.convert_byte_array(associated_data).unwrap())
-                },
-            )
-            .map_err(JniError::DecodeError)
-        } else {
-            Err(JniError::BadHandle)
-        };
+    let result = if let Some(ctx) =
+        CONNECTION_HANDLE_MAPPING.lock().get_mut(&(context_handle as u64))
+    {
+        ctx.decode_message_from_peer::<CryptoProvider, _>(
+            env.convert_byte_array(unsafe { JByteArray::from_raw(message) }).unwrap().as_slice(),
+            if associated_data.is_null() {
+                None
+            } else {
+                Some(
+                    env.convert_byte_array(unsafe { JByteArray::from_raw(associated_data) })
+                        .unwrap(),
+                )
+            },
+        )
+        .map_err(JniError::DecodeError)
+    } else {
+        Err(JniError::BadHandle)
+    };
     if let Ok(message) = result {
         env.byte_array_from_slice(message.as_slice()).expect("unable to create jByteArray")
     } else {
@@ -401,12 +413,13 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
         .expect("failed to find exception class");
         empty_array
     }
+    .into_raw()
 }
 
 /// Returns the last sequence number used to encode a message.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_get_1sequence_1number_1for_1encoding(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jint {
@@ -422,7 +435,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 /// Returns the last sequence number used to decode a message.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_get_1sequence_1number_1for_1decoding(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jint {
@@ -439,7 +452,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 /// persisted, but it must be stored in a secure location.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_save_1session(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -451,6 +464,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
             .expect("failed to find error class");
         empty_array
     }
+    .into_raw()
 }
 
 /// Creates a connection context from a saved session.
@@ -458,11 +472,13 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_from_1saved_1session(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     session_info: jbyteArray,
 ) -> jlong {
-    let session_info_rust = env.convert_byte_array(session_info).expect("bad session_info data");
+    let session_info_rust = env
+        .convert_byte_array(unsafe { JByteArray::from_raw(session_info) })
+        .expect("bad session_info data");
     let ctx =
         D2DConnectionContextV1::from_saved_session::<CryptoProvider>(session_info_rust.as_slice());
     if ctx.is_err() {
@@ -487,7 +503,7 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
 /// resulting session unique is also the same.
 #[no_mangle]
 pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2DConnectionContextV1_get_1session_1unique(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     context_handle: jlong,
 ) -> jbyteArray {
@@ -500,4 +516,5 @@ pub extern "system" fn Java_com_google_security_cryptauth_lib_securegcm_ukey2_D2
             .expect("failed to find error class");
         empty_array
     }
+    .into_raw()
 }
